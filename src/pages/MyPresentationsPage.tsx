@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Container } from '../components/layout/Container';
 import { Button } from '../components/ui/Button';
@@ -38,6 +38,14 @@ export function MyPresentationsPage() {
         fetchPresentations();
     }, [user, authLoading]);
 
+    const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation(); // Don't navigate to detail page
+        if (!confirm('Delete this presentation? This cannot be undone.')) return;
+
+        await supabase.from('presentations').delete().eq('id', id);
+        setPresentations(prev => prev.filter(p => p.id !== id));
+    }, []);
+
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         return date.toLocaleDateString(undefined, {
@@ -72,9 +80,6 @@ export function MyPresentationsPage() {
                         <Button fullWidth onClick={signInWithGoogle}>
                             Sign in with Google
                         </Button>
-                        <button className={styles.backLink} onClick={() => navigate('/')}>
-                            ← Back to home
-                        </button>
                     </div>
                 </Container>
             </div>
@@ -85,10 +90,10 @@ export function MyPresentationsPage() {
         <div className={styles.page}>
             <Container size="md" centered>
                 <header className={styles.header}>
-                    <button className={styles.backButton} onClick={() => navigate('/')}>
-                        ← Back
-                    </button>
                     <h1 className={styles.title}>My Presentations</h1>
+                    <Button size="sm" onClick={() => navigate('/upload')}>
+                        + Upload New
+                    </Button>
                 </header>
 
                 {presentations.length === 0 ? (
@@ -101,28 +106,30 @@ export function MyPresentationsPage() {
                 ) : (
                     <div className={styles.grid}>
                         {presentations.map((presentation) => (
-                            <button
-                                key={presentation.id}
-                                className={styles.card}
-                                onClick={() => navigate(`/presentation/${presentation.id}`)}
-                            >
-                                <div className={styles.cardContent}>
-                                    <h2 className={styles.cardTitle}>{presentation.title}</h2>
-                                    <span className={styles.cardMeta}>
-                                        {presentation.slide_count} slides • {formatDate(presentation.created_at)}
-                                    </span>
-                                </div>
-                                <span className={styles.cardArrow}>→</span>
-                            </button>
+                            <div key={presentation.id} className={styles.card}>
+                                <button
+                                    className={styles.cardMain}
+                                    onClick={() => navigate(`/presentation/${presentation.id}`)}
+                                >
+                                    <div className={styles.cardContent}>
+                                        <h2 className={styles.cardTitle}>{presentation.title}</h2>
+                                        <span className={styles.cardMeta}>
+                                            {presentation.slide_count} slides • {formatDate(presentation.created_at)}
+                                        </span>
+                                    </div>
+                                    <span className={styles.cardArrow}>→</span>
+                                </button>
+                                <button
+                                    className={styles.deleteBtn}
+                                    onClick={(e) => handleDelete(e, presentation.id)}
+                                    title="Delete presentation"
+                                >
+                                    🗑
+                                </button>
+                            </div>
                         ))}
                     </div>
                 )}
-
-                <div className={styles.footer}>
-                    <Button variant="secondary" onClick={() => navigate('/upload')}>
-                        Upload New Presentation
-                    </Button>
-                </div>
             </Container>
         </div>
     );

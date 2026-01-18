@@ -130,12 +130,10 @@ export function PresentationDetailPage() {
         <div className={styles.page}>
             <Container size="sm" centered>
                 <div className={styles.content}>
-                    {/* Header with back button */}
-                    <header className={styles.header}>
-                        <button className={styles.backButton} onClick={() => navigate('/my-presentations')}>
-                            ← Back
-                        </button>
-                    </header>
+                    {/* Back link */}
+                    <button className={styles.backButton} onClick={() => navigate('/my-presentations')}>
+                        ← Back to presentations
+                    </button>
 
                     {/* Title with edit */}
                     <div className={styles.titleSection}>

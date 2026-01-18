@@ -1,7 +1,7 @@
 .page {
     min-height: calc(100vh - 57px);
     background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-    padding: var(--spacing-4) 0;
+    padding: var(--spacing-3) 0;
     display: flex;
     align-items: flex-start;
 }
@@ -9,7 +9,7 @@
 .content {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-5);
+    gap: var(--spacing-4);
 }
 
 /* Hero section - compact */
