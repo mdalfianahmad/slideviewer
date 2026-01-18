@@ -105,19 +105,22 @@ export function HomePage() {
 
                     {/* How it works - compact */}
                     <div className={styles.howItWorks}>
-                        <div className={styles.step}>
-                            <span>📄</span>
-                            <span>Upload PDF</span>
-                        </div>
-                        <span className={styles.arrow}>→</span>
-                        <div className={styles.step}>
-                            <span>🔗</span>
-                            <span>Share Code/QR</span>
-                        </div>
-                        <span className={styles.arrow}>→</span>
-                        <div className={styles.step}>
-                            <span>🎯</span>
-                            <span>Present Live</span>
+                        <span className={styles.howItWorksLabel}>How it works:</span>
+                        <div className={styles.steps}>
+                            <div className={styles.step}>
+                                <span>📄</span>
+                                <span>Upload PDF</span>
+                            </div>
+                            <span className={styles.arrow}>→</span>
+                            <div className={styles.step}>
+                                <span>🔗</span>
+                                <span>Share Code/QR</span>
+                            </div>
+                            <span className={styles.arrow}>→</span>
+                            <div className={styles.step}>
+                                <span>🎯</span>
+                                <span>Present Live</span>
+                            </div>
                         </div>
                     </div>
                 </div>

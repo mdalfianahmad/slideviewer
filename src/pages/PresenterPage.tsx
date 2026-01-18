@@ -54,21 +54,20 @@ export function PresenterPage() {
                 setPresentation(pres as Presentation);
                 setCurrentSlideIndex((pres as Presentation).current_slide_index);
 
-                // Mark as live when presenter opens
-                const { error: liveError } = await supabase
+                // Mark as live and update last_presented_at
+                const { error: updateError } = await supabase
                     .from('presentations')
-                    .update({ is_live: true })
+                    .update({
+                        is_live: true,
+                        last_presented_at: new Date().toISOString()
+                    })
                     .eq('id', presentationId);
 
-                if (liveError) {
-                    console.error('Failed to set is_live:', liveError);
+                if (updateError) {
+                    console.error('Failed to update presentation:', updateError);
+                } else {
+                    console.log('Presentation marked as live, last_presented_at updated');
                 }
-
-                // Try to update last_presented_at (may fail if column doesn't exist)
-                await supabase
-                    .from('presentations')
-                    .update({ last_presented_at: new Date().toISOString() })
-                    .eq('id', presentationId);
 
                 const { data: slideData, error: slideErr } = await supabase
                     .from('slides')
