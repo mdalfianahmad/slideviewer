@@ -208,10 +208,129 @@
     color: var(--color-white);
     min-width: 80px;
     text-align: center;
+    background: none;
+    border: 1px solid var(--color-gray-600);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-2) var(--spacing-3);
+    cursor: pointer;
+    transition: all var(--transition-fast);
 }
 
-.spacer {
-    width: 120px;
+.slideCounter:hover {
+    background-color: var(--color-gray-700);
+    border-color: var(--color-gray-500);
+}
+
+.fullscreenBtn {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-gray-700);
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--color-white);
+    font-size: var(--font-size-xl);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.fullscreenBtn:hover {
+    background-color: var(--color-gray-600);
+}
+
+/* Slide Overview Modal */
+.overviewModal {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.9);
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    padding: var(--spacing-4);
+    overflow: hidden;
+}
+
+.overviewHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-4);
+}
+
+.overviewHeader h3 {
+    color: var(--color-white);
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+}
+
+.closeBtn {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-gray-700);
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--color-white);
+    font-size: var(--font-size-lg);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.closeBtn:hover {
+    background-color: var(--color-gray-600);
+}
+
+.overviewGrid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--spacing-3);
+    overflow-y: auto;
+    padding: var(--spacing-2);
+}
+
+.overviewSlide {
+    position: relative;
+    background-color: var(--color-gray-800);
+    border: 2px solid transparent;
+    border-radius: var(--radius-md);
+    padding: 0;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    overflow: hidden;
+}
+
+.overviewSlide img {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: cover;
+    display: block;
+}
+
+.overviewSlide:hover {
+    border-color: var(--color-gray-500);
+    transform: scale(1.02);
+}
+
+.overviewActive {
+    border-color: #667eea !important;
+    box-shadow: 0 0 20px rgba(102, 126, 234, 0.4);
+}
+
+.overviewNumber {
+    position: absolute;
+    bottom: var(--spacing-2);
+    right: var(--spacing-2);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: var(--color-white);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+    padding: var(--spacing-1) var(--spacing-2);
+    border-radius: var(--radius-sm);
 }
 
 /* Mobile adjustments */
@@ -231,5 +350,9 @@
 
     .inviteBox {
         flex: 1;
+    }
+
+    .overviewGrid {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
     }
 }

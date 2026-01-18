@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { formatInviteCodeForDisplay, getJoinUrl } from '../lib/invite-code';
@@ -12,7 +12,10 @@ import styles from './PresenterPage.module.css';
 export function PresenterPage() {
     const { presentationId } = useParams<{ presentationId: string }>();
     const navigate = useNavigate();
+    const pageRef = useRef<HTMLDivElement>(null);
     const [isCopied, setIsCopied] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [showSlideOverview, setShowSlideOverview] = useState(false);
 
     // Data state
     const [presentation, setPresentation] = useState<Presentation | null>(null);
@@ -130,10 +133,30 @@ export function PresenterPage() {
         };
     }, [presentationId]);
 
+    // Fullscreen change listener
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+    }, []);
+
+    const toggleFullscreen = useCallback(async () => {
+        if (!pageRef.current) return;
+
+        if (document.fullscreenElement) {
+            await document.exitFullscreen();
+        } else {
+            await pageRef.current.requestFullscreen();
+        }
+    }, []);
+
     const goToSlide = useCallback(async (index: number) => {
         if (!presentationId || !hasPresenterToken) return;
         const clampedIndex = Math.max(1, Math.min(index, slides.length));
         setCurrentSlideIndex(clampedIndex);
+        setShowSlideOverview(false); // Close overview when selecting a slide
 
         await supabase
             .from('presentations')
@@ -174,12 +197,28 @@ export function PresenterPage() {
                     e.preventDefault();
                     prevSlide();
                     break;
+                case 'Escape':
+                    if (showSlideOverview) {
+                        e.preventDefault();
+                        setShowSlideOverview(false);
+                    }
+                    break;
+                case 'g':
+                case 'G':
+                    e.preventDefault();
+                    setShowSlideOverview(prev => !prev);
+                    break;
+                case 'f':
+                case 'F':
+                    e.preventDefault();
+                    toggleFullscreen();
+                    break;
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [nextSlide, prevSlide, hasPresenterToken]);
+    }, [nextSlide, prevSlide, hasPresenterToken, showSlideOverview, toggleFullscreen]);
 
     const handleCopyLink = useCallback(async () => {
         if (!presentation) return;
@@ -231,7 +270,37 @@ export function PresenterPage() {
     }
 
     return (
-        <div className={styles.page}>
+        <div className={styles.page} ref={pageRef}>
+            {/* Slide Overview Modal */}
+            {showSlideOverview && (
+                <div className={styles.overviewModal}>
+                    <div className={styles.overviewHeader}>
+                        <h3>Go to Slide</h3>
+                        <button
+                            className={styles.closeBtn}
+                            onClick={() => setShowSlideOverview(false)}
+                        >
+                            ✕
+                        </button>
+                    </div>
+                    <div className={styles.overviewGrid}>
+                        {slides.map(slide => (
+                            <button
+                                key={slide.id}
+                                className={`${styles.overviewSlide} ${slide.slide_number === currentSlideIndex ? styles.overviewActive : ''}`}
+                                onClick={() => goToSlide(slide.slide_number)}
+                            >
+                                <img
+                                    src={slide.thumbnail_url || slide.image_url}
+                                    alt={`Slide ${slide.slide_number}`}
+                                />
+                                <span className={styles.overviewNumber}>{slide.slide_number}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Main content area */}
             <div className={styles.mainArea}>
                 {/* Current slide */}
@@ -294,11 +363,23 @@ export function PresenterPage() {
 
                 <div className={styles.navigation}>
                     <button className={styles.navButton} onClick={prevSlide} disabled={currentSlideIndex <= 1}>←</button>
-                    <span className={styles.slideCounter}>{currentSlideIndex} / {slides.length}</span>
+                    <button
+                        className={styles.slideCounter}
+                        onClick={() => setShowSlideOverview(true)}
+                        title="Click to view all slides (G)"
+                    >
+                        {currentSlideIndex} / {slides.length}
+                    </button>
                     <button className={styles.navButton} onClick={nextSlide} disabled={currentSlideIndex >= slides.length}>→</button>
                 </div>
 
-                <div className={styles.spacer} />
+                <button
+                    className={styles.fullscreenBtn}
+                    onClick={toggleFullscreen}
+                    title="Toggle fullscreen (F)"
+                >
+                    {isFullscreen ? '⛶' : '⛶'}
+                </button>
             </div>
         </div>
     );
