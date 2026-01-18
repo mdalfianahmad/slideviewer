@@ -1,0 +1,32 @@
+.container {
+    width: 100%;
+    margin-left: auto;
+    margin-right: auto;
+    padding-left: var(--spacing-4);
+    padding-right: var(--spacing-4);
+}
+
+.sm {
+    max-width: 480px;
+}
+
+.md {
+    max-width: 768px;
+}
+
+.lg {
+    max-width: 1024px;
+}
+
+.full {
+    max-width: 100%;
+}
+
+.centered {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    text-align: center;
+}

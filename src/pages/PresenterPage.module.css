@@ -1,0 +1,235 @@
+.page {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-gray-900);
+}
+
+.loading,
+.error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: var(--spacing-4);
+    color: var(--color-gray-500);
+}
+
+.error h2 {
+    color: var(--color-black);
+}
+
+/* Main presenter layout */
+.mainArea {
+    flex: 1;
+    display: flex;
+    gap: var(--spacing-4);
+    padding: var(--spacing-4);
+    overflow: hidden;
+}
+
+.currentSlideContainer {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-black);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.currentSlide {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+/* Side panel with next slide and info */
+.sidePanel {
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-4);
+    flex-shrink: 0;
+}
+
+/* Audience count */
+.audienceBox {
+    background-color: var(--color-gray-800);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-2);
+}
+
+.audienceIcon {
+    font-size: var(--font-size-lg);
+}
+
+.audienceCount {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    color: var(--color-white);
+}
+
+.audienceLabel {
+    font-size: var(--font-size-sm);
+    color: var(--color-gray-400);
+}
+
+.nextSlideBox {
+    background-color: var(--color-gray-800);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-3);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+.nextLabel {
+    font-size: var(--font-size-xs);
+    color: var(--color-gray-400);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.nextSlideImage {
+    width: 100%;
+    aspect-ratio: 16/9;
+    object-fit: contain;
+    background-color: var(--color-black);
+    border-radius: var(--radius-sm);
+}
+
+.endSlide {
+    width: 100%;
+    aspect-ratio: 16/9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-gray-700);
+    border-radius: var(--radius-sm);
+    color: var(--color-gray-400);
+    font-size: var(--font-size-sm);
+}
+
+.inviteBox {
+    background-color: var(--color-gray-800);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-4);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-2);
+}
+
+.inviteLabel {
+    font-size: var(--font-size-xs);
+    color: var(--color-gray-400);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.inviteCode {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    font-family: monospace;
+    letter-spacing: 0.1em;
+    color: var(--color-white);
+}
+
+.qrCode {
+    background: white;
+    padding: var(--spacing-2);
+    border-radius: var(--radius-md);
+}
+
+.copyBtn {
+    padding: var(--spacing-2) var(--spacing-4);
+    background-color: var(--color-gray-700);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--color-white);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.copyBtn:hover {
+    background-color: var(--color-gray-600);
+}
+
+/* Bottom controls */
+.controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-3) var(--spacing-4);
+    background-color: var(--color-gray-800);
+    border-top: 1px solid var(--color-gray-700);
+}
+
+.navigation {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+}
+
+.navButton {
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-gray-700);
+    border: none;
+    border-radius: var(--radius-md);
+    color: var(--color-white);
+    font-size: var(--font-size-xl);
+    cursor: pointer;
+    transition: background-color var(--transition-fast);
+}
+
+.navButton:hover:not(:disabled) {
+    background-color: var(--color-gray-600);
+}
+
+.navButton:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.slideCounter {
+    font-size: var(--font-size-lg);
+    font-weight: var(--font-weight-medium);
+    color: var(--color-white);
+    min-width: 80px;
+    text-align: center;
+}
+
+.spacer {
+    width: 120px;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .mainArea {
+        flex-direction: column;
+    }
+
+    .sidePanel {
+        width: 100%;
+        flex-direction: row;
+    }
+
+    .nextSlideBox {
+        flex: 1;
+    }
+
+    .inviteBox {
+        flex: 1;
+    }
+}

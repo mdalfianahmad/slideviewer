@@ -1,0 +1,196 @@
+.page {
+    min-height: 100vh;
+    background-color: var(--color-black);
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+}
+
+.loading,
+.error {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-4);
+    color: var(--color-gray-600);
+    background-color: var(--color-white);
+}
+
+.error h2 {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-black);
+}
+
+.ended,
+.waiting {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--color-black);
+    flex-direction: column;
+    gap: var(--spacing-4);
+    color: var(--color-gray-400);
+}
+
+.endedContent {
+    text-align: center;
+    color: var(--color-white);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--spacing-4);
+}
+
+.endedIcon {
+    font-size: 64px;
+}
+
+.endedContent h2 {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.endedContent p {
+    font-size: var(--font-size-base);
+    color: var(--color-gray-400);
+}
+
+.thankYou {
+    font-size: var(--font-size-lg);
+    color: var(--color-white);
+    margin-bottom: var(--spacing-4);
+}
+
+.reconnecting {
+    position: fixed;
+    top: var(--spacing-4);
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--color-gray-800);
+    color: var(--color-white);
+    padding: var(--spacing-2) var(--spacing-4);
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-sm);
+    z-index: var(--z-tooltip);
+}
+
+.slideContainer {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-2);
+}
+
+.slideImage {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+/* Minimal overlay */
+.overlay {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: var(--z-sticky);
+}
+
+.slideCounter {
+    position: absolute;
+    bottom: var(--spacing-4);
+    left: var(--spacing-4);
+    font-size: var(--font-size-sm);
+    color: rgba(255, 255, 255, 0.5);
+    font-variant-numeric: tabular-nums;
+    background: rgba(0, 0, 0, 0.3);
+    padding: var(--spacing-1) var(--spacing-2);
+    border-radius: var(--radius-sm);
+}
+
+.fullscreenButton {
+    position: absolute;
+    bottom: var(--spacing-4);
+    right: var(--spacing-4);
+    pointer-events: auto;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+    border: none;
+    border-radius: var(--radius-md);
+    font-size: var(--font-size-lg);
+    color: rgba(255, 255, 255, 0.7);
+    cursor: pointer;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.fullscreenButton:hover {
+    background: rgba(255, 255, 255, 0.2);
+    color: var(--color-white);
+}
+
+.connectionIndicator {
+    position: absolute;
+    top: var(--spacing-4);
+    right: var(--spacing-4);
+}
+
+.connectionDot {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.connected {
+    background-color: #22c55e;
+}
+
+.disconnected {
+    background-color: var(--color-error);
+}
+
+/* Mobile adjustments */
+@media (max-width: 640px) {
+    .slideContainer {
+        padding: 0;
+    }
+
+    .slideCounter {
+        bottom: var(--spacing-2);
+        left: var(--spacing-2);
+        font-size: var(--font-size-xs);
+    }
+
+    .fullscreenButton {
+        bottom: var(--spacing-2);
+        right: var(--spacing-2);
+        width: 36px;
+        height: 36px;
+    }
+}
+
+/* Landscape mobile optimization */
+@media (max-height: 500px) and (orientation: landscape) {
+    .slideContainer {
+        padding: var(--spacing-1);
+    }
+
+    .slideCounter {
+        bottom: var(--spacing-1);
+        left: var(--spacing-1);
+    }
+
+    .fullscreenButton {
+        bottom: var(--spacing-1);
+        right: var(--spacing-1);
+    }
+}

@@ -1,0 +1,140 @@
+.page {
+    min-height: calc(100vh - 57px);
+    background: var(--color-gray-50);
+    padding: var(--spacing-6) 0;
+}
+
+.loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 50vh;
+    gap: var(--spacing-4);
+    color: var(--color-gray-500);
+}
+
+.signIn {
+    text-align: center;
+    padding: var(--spacing-10) 0;
+}
+
+.signIn h1 {
+    font-size: var(--font-size-2xl);
+    font-weight: var(--font-weight-bold);
+    margin-bottom: var(--spacing-2);
+}
+
+.signIn p {
+    color: var(--color-gray-500);
+    margin-bottom: var(--spacing-6);
+}
+
+.backLink {
+    display: block;
+    margin-top: var(--spacing-4);
+    background: none;
+    border: none;
+    color: var(--color-gray-500);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+
+.backLink:hover {
+    color: var(--color-black);
+}
+
+.header {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+}
+
+.backButton {
+    padding: var(--spacing-2) var(--spacing-3);
+    background: none;
+    border: none;
+    font-size: var(--font-size-sm);
+    color: var(--color-gray-500);
+    cursor: pointer;
+}
+
+.backButton:hover {
+    color: var(--color-black);
+}
+
+.title {
+    font-size: var(--font-size-xl);
+    font-weight: var(--font-weight-bold);
+}
+
+.empty {
+    text-align: center;
+    padding: var(--spacing-10);
+    background: var(--color-white);
+    border-radius: var(--radius-lg);
+    color: var(--color-gray-500);
+}
+
+.empty p {
+    margin-bottom: var(--spacing-4);
+}
+
+/* Card list */
+.grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+.card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-4);
+    padding: var(--spacing-4) var(--spacing-5);
+    background: var(--color-white);
+    border: 1px solid var(--color-gray-100);
+    border-radius: var(--radius-lg);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    text-align: left;
+    width: 100%;
+}
+
+.card:hover {
+    border-color: var(--color-gray-300);
+    background: var(--color-gray-50);
+}
+
+.cardContent {
+    flex: 1;
+    min-width: 0;
+}
+
+.cardTitle {
+    font-size: var(--font-size-base);
+    font-weight: var(--font-weight-semibold);
+    color: var(--color-black);
+    margin-bottom: var(--spacing-1);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cardMeta {
+    font-size: var(--font-size-sm);
+    color: var(--color-gray-400);
+}
+
+.cardArrow {
+    color: var(--color-gray-300);
+    font-size: var(--font-size-lg);
+    flex-shrink: 0;
+}
+
+.footer {
+    margin-top: var(--spacing-6);
+    text-align: center;
+}
