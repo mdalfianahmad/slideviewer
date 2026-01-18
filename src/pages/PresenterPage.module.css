@@ -163,13 +163,24 @@
 }
 
 /* Bottom controls */
+.controlsWrapper {
+    background-color: var(--color-gray-800);
+    border-top: 1px solid var(--color-gray-700);
+}
+
 .controls {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: var(--spacing-3) var(--spacing-4);
-    background-color: var(--color-gray-800);
-    border-top: 1px solid var(--color-gray-700);
+}
+
+.controlsHint {
+    text-align: center;
+    font-size: var(--font-size-xs);
+    color: var(--color-gray-500);
+    padding: 0 var(--spacing-4) var(--spacing-3);
+    margin: 0;
 }
 
 .navigation {

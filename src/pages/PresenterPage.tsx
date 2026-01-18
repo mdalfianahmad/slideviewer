@@ -389,29 +389,34 @@ export function PresenterPage() {
             </div>
 
             {/* Bottom controls */}
-            <div className={styles.controls}>
-                <Button variant="ghost" size="sm" onClick={endPresentation}>
-                    End Presentation
-                </Button>
+            <div className={styles.controlsWrapper}>
+                <div className={styles.controls}>
+                    <Button variant="ghost" size="sm" onClick={endPresentation}>
+                        End Presentation
+                    </Button>
 
-                <div className={styles.navigation}>
-                    <button className={styles.navButton} onClick={prevSlide} disabled={currentSlideIndex <= 1}>←</button>
+                    <div className={styles.navigation}>
+                        <button className={styles.navButton} onClick={prevSlide} disabled={currentSlideIndex <= 1}>←</button>
+                        <button
+                            className={styles.slideCounter}
+                            onClick={() => setShowSlideOverview(true)}
+                        >
+                            <span className={styles.slideCounterIcon}>▤</span>
+                            {currentSlideIndex} / {slides.length}
+                        </button>
+                        <button className={styles.navButton} onClick={nextSlide} disabled={currentSlideIndex >= slides.length}>→</button>
+                    </div>
+
                     <button
-                        className={styles.slideCounter}
-                        onClick={() => setShowSlideOverview(true)}
+                        className={styles.fullscreenBtn}
+                        onClick={toggleFullscreen}
                     >
-                        <span className={styles.slideCounterIcon}>▤</span>
-                        {currentSlideIndex} / {slides.length}
+                        {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                     </button>
-                    <button className={styles.navButton} onClick={nextSlide} disabled={currentSlideIndex >= slides.length}>→</button>
                 </div>
-
-                <button
-                    className={styles.fullscreenBtn}
-                    onClick={toggleFullscreen}
-                >
-                    {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                </button>
+                <p className={styles.controlsHint}>
+                    💡 Click the slide number to jump to any slide (doesn't affect what viewers see until you select)
+                </p>
             </div>
         </div>
     );
