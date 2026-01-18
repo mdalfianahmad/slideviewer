@@ -136,19 +136,52 @@ export function PresenterPage() {
     // Fullscreen change listener
     useEffect(() => {
         const handleFullscreenChange = () => {
-            setIsFullscreen(!!document.fullscreenElement);
+            setIsFullscreen(!!(
+                document.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).mozFullScreenElement
+            ));
         };
         document.addEventListener('fullscreenchange', handleFullscreenChange);
-        return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+        };
     }, []);
 
     const toggleFullscreen = useCallback(async () => {
-        if (!pageRef.current) return;
+        try {
+            const elem = pageRef.current;
+            if (!elem) return;
 
-        if (document.fullscreenElement) {
-            await document.exitFullscreen();
-        } else {
-            await pageRef.current.requestFullscreen();
+            const isCurrentlyFullscreen = !!(
+                document.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).mozFullScreenElement
+            );
+
+            if (isCurrentlyFullscreen) {
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                } else if ((document as any).webkitExitFullscreen) {
+                    (document as any).webkitExitFullscreen();
+                } else if ((document as any).mozCancelFullScreen) {
+                    (document as any).mozCancelFullScreen();
+                }
+            } else {
+                if (elem.requestFullscreen) {
+                    await elem.requestFullscreen();
+                } else if ((elem as any).webkitRequestFullscreen) {
+                    (elem as any).webkitRequestFullscreen();
+                } else if ((elem as any).mozRequestFullScreen) {
+                    (elem as any).mozRequestFullScreen();
+                }
+            }
+        } catch (err) {
+            console.error('Fullscreen error:', err);
         }
     }, []);
 
@@ -366,8 +399,8 @@ export function PresenterPage() {
                     <button
                         className={styles.slideCounter}
                         onClick={() => setShowSlideOverview(true)}
-                        title="Click to view all slides (G)"
                     >
+                        <span className={styles.slideCounterIcon}>▤</span>
                         {currentSlideIndex} / {slides.length}
                     </button>
                     <button className={styles.navButton} onClick={nextSlide} disabled={currentSlideIndex >= slides.length}>→</button>
@@ -376,9 +409,8 @@ export function PresenterPage() {
                 <button
                     className={styles.fullscreenBtn}
                     onClick={toggleFullscreen}
-                    title="Toggle fullscreen (F)"
                 >
-                    {isFullscreen ? '⛶' : '⛶'}
+                    {isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
                 </button>
             </div>
         </div>

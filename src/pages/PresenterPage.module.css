@@ -203,15 +203,16 @@
 }
 
 .slideCounter {
-    font-size: var(--font-size-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
+    font-size: var(--font-size-base);
     font-weight: var(--font-weight-medium);
     color: var(--color-white);
-    min-width: 80px;
-    text-align: center;
     background: none;
     border: 1px solid var(--color-gray-600);
-    border-radius: var(--radius-sm);
-    padding: var(--spacing-2) var(--spacing-3);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-2) var(--spacing-4);
     cursor: pointer;
     transition: all var(--transition-fast);
 }
@@ -221,17 +222,21 @@
     border-color: var(--color-gray-500);
 }
 
+.slideCounterIcon {
+    font-size: var(--font-size-lg);
+    opacity: 0.7;
+}
+
 .fullscreenBtn {
-    width: 48px;
-    height: 48px;
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: var(--spacing-2);
     background-color: var(--color-gray-700);
     border: none;
     border-radius: var(--radius-md);
     color: var(--color-white);
-    font-size: var(--font-size-xl);
+    font-size: var(--font-size-sm);
+    padding: var(--spacing-2) var(--spacing-4);
     cursor: pointer;
     transition: background-color var(--transition-fast);
 }
