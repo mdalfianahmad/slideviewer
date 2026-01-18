@@ -8,12 +8,9 @@ const INVITE_CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Removed confusi
  * 6 characters, alphanumeric, case-insensitive safe
  */
 export function generateInviteCode(): string {
-    let code = '';
-    for (let i = 0; i < INVITE_CODE_LENGTH; i++) {
-        const randomIndex = Math.floor(Math.random() * INVITE_CODE_CHARS.length);
-        code += INVITE_CODE_CHARS[randomIndex];
-    }
-    return code;
+    const array = new Uint32Array(INVITE_CODE_LENGTH);
+    crypto.getRandomValues(array);
+    return Array.from(array, num => INVITE_CODE_CHARS[num % INVITE_CODE_CHARS.length]).join('');
 }
 
 /**

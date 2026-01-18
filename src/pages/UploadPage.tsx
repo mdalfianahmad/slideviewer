@@ -106,7 +106,13 @@ export function UploadPage() {
 
             const presentationId = crypto.randomUUID();
             const presenterToken = crypto.randomUUID(); // Secret for the uploader
-            const title = file.name.replace(/\.pdf$/i, '') || 'Untitled Presentation';
+            // Sanitize filename to prevent XSS
+            const title = file.name
+                .replace(/\.pdf$/i, '')
+                .replace(/[<>:"\/\\|?*&]/g, '') // Remove dangerous chars
+                .trim()
+                .slice(0, 100) // Limit length
+                || 'Untitled Presentation';
             const inviteCode = generateInviteCode();
 
             // Upload original PDF
