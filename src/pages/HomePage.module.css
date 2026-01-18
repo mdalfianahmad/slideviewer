@@ -15,7 +15,7 @@
 /* Hero section - compact */
 .hero {
     text-align: center;
-    padding: var(--spacing-4) 0;
+    padding: var(--spacing-2) 0 var(--spacing-4);
 }
 
 .title {

@@ -34,7 +34,7 @@ export function HomePage() {
 
     return (
         <div className={styles.page}>
-            <Container size="md" centered>
+            <Container size="md">
                 <div className={styles.content}>
                     {/* Hero */}
                     <header className={styles.hero}>
