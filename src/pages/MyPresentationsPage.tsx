@@ -39,7 +39,7 @@ export function MyPresentationsPage() {
     }, [user, authLoading]);
 
     const handleDelete = useCallback(async (e: React.MouseEvent, id: string) => {
-        e.stopPropagation(); // Don't navigate to detail page
+        e.stopPropagation();
         if (!confirm('Delete this presentation? This cannot be undone.')) return;
 
         await supabase.from('presentations').delete().eq('id', id);
@@ -52,18 +52,16 @@ export function MyPresentationsPage() {
             month: 'short',
             day: 'numeric',
             year: 'numeric',
-            hour: 'numeric',
-            minute: '2-digit',
         });
     };
 
     if (authLoading || isLoading) {
         return (
             <div className={styles.page}>
-                <Container size="md" centered>
+                <Container size="lg">
                     <div className={styles.loading}>
                         <Spinner size="lg" />
-                        <p>Loading...</p>
+                        <p>Loading presentations...</p>
                     </div>
                 </Container>
             </div>
@@ -73,10 +71,11 @@ export function MyPresentationsPage() {
     if (!user) {
         return (
             <div className={styles.page}>
-                <Container size="sm" centered>
-                    <div className={styles.signIn}>
-                        <h1>Sign in Required</h1>
-                        <p>Sign in to view your presentations</p>
+                <Container size="sm">
+                    <div className={styles.signInCard}>
+                        <div className={styles.signInIcon}>🔐</div>
+                        <h1>Sign in to continue</h1>
+                        <p>Access your presentations by signing in with your Google account.</p>
                         <Button fullWidth onClick={signInWithGoogle}>
                             Sign in with Google
                         </Button>
@@ -88,46 +87,87 @@ export function MyPresentationsPage() {
 
     return (
         <div className={styles.page}>
-            <Container size="md" centered>
-                <header className={styles.header}>
-                    <h1 className={styles.title}>My Presentations</h1>
-                    <Button size="sm" onClick={() => navigate('/upload')}>
-                        + Upload New
+            <Container size="lg">
+                {/* Page Header */}
+                <div className={styles.pageHeader}>
+                    <div className={styles.headerLeft}>
+                        <h1 className={styles.pageTitle}>My Presentations</h1>
+                        <p className={styles.pageSubtitle}>
+                            {presentations.length} presentation{presentations.length !== 1 ? 's' : ''}
+                        </p>
+                    </div>
+                    <Button onClick={() => navigate('/upload')}>
+                        + New Presentation
                     </Button>
-                </header>
+                </div>
 
                 {presentations.length === 0 ? (
-                    <div className={styles.empty}>
-                        <p>You haven't uploaded any presentations yet.</p>
+                    <div className={styles.emptyState}>
+                        <div className={styles.emptyIcon}>📑</div>
+                        <h2>No presentations yet</h2>
+                        <p>Upload your first PDF to get started</p>
                         <Button onClick={() => navigate('/upload')}>
-                            Upload Your First Presentation
+                            Upload PDF
                         </Button>
                     </div>
                 ) : (
-                    <div className={styles.grid}>
-                        {presentations.map((presentation) => (
-                            <div key={presentation.id} className={styles.card}>
-                                <button
-                                    className={styles.cardMain}
-                                    onClick={() => navigate(`/presentation/${presentation.id}`)}
-                                >
-                                    <div className={styles.cardContent}>
-                                        <h2 className={styles.cardTitle}>{presentation.title}</h2>
-                                        <span className={styles.cardMeta}>
-                                            {presentation.slide_count} slides • {formatDate(presentation.created_at)}
-                                        </span>
-                                    </div>
-                                    <span className={styles.cardArrow}>→</span>
-                                </button>
-                                <button
-                                    className={styles.deleteBtn}
-                                    onClick={(e) => handleDelete(e, presentation.id)}
-                                    title="Delete presentation"
-                                >
-                                    🗑
-                                </button>
-                            </div>
-                        ))}
+                    <div className={styles.tableWrapper}>
+                        <table className={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Slides</th>
+                                    <th>Created</th>
+                                    <th>Status</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {presentations.map((presentation) => (
+                                    <tr
+                                        key={presentation.id}
+                                        onClick={() => navigate(`/presentation/${presentation.id}`)}
+                                        className={styles.tableRow}
+                                    >
+                                        <td className={styles.nameCell}>
+                                            <span className={styles.presentationName}>{presentation.title}</span>
+                                        </td>
+                                        <td className={styles.slidesCell}>
+                                            {presentation.slide_count}
+                                        </td>
+                                        <td className={styles.dateCell}>
+                                            {formatDate(presentation.created_at)}
+                                        </td>
+                                        <td>
+                                            {presentation.is_live ? (
+                                                <span className={styles.statusLive}>● Live</span>
+                                            ) : (
+                                                <span className={styles.statusReady}>Ready</span>
+                                            )}
+                                        </td>
+                                        <td className={styles.actionsCell}>
+                                            <button
+                                                className={styles.actionBtn}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    navigate(`/present/${presentation.id}`);
+                                                }}
+                                                title="Start presenting"
+                                            >
+                                                ▶️
+                                            </button>
+                                            <button
+                                                className={`${styles.actionBtn} ${styles.deleteBtn}`}
+                                                onClick={(e) => handleDelete(e, presentation.id)}
+                                                title="Delete"
+                                            >
+                                                🗑️
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 )}
             </Container>

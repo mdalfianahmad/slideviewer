@@ -8,7 +8,8 @@ export function Navbar() {
     const { user, signOut } = useAuth();
 
     // Don't show navbar on presenter/viewer pages (full screen)
-    const hideNavbar = location.pathname.startsWith('/present') ||
+    // Note: /present/:id (presenter) should hide, but /presentation/:id (detail) should show
+    const hideNavbar = /^\/present\//.test(location.pathname) ||
         location.pathname.startsWith('/view');
 
     if (hideNavbar) return null;
