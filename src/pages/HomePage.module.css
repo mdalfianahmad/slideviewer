@@ -1,31 +1,34 @@
 .page {
     min-height: calc(100vh - 57px);
-    /* Subtract navbar height */
+    background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: var(--spacing-4) 0;
     display: flex;
-    align-items: center;
-    padding: var(--spacing-6) 0;
+    align-items: flex-start;
 }
 
 .content {
-    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-5);
 }
 
-/* Hero */
+/* Hero section - compact */
 .hero {
     text-align: center;
-    margin-bottom: var(--spacing-8);
+    padding: var(--spacing-4) 0;
 }
 
 .title {
-    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-size: clamp(1.5rem, 4vw, 2rem);
     font-weight: var(--font-weight-bold);
     color: var(--color-black);
+    letter-spacing: -0.02em;
     line-height: 1.2;
     margin-bottom: var(--spacing-2);
 }
 
 .highlight {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -38,44 +41,76 @@
     margin: 0 auto;
 }
 
-/* Two-column grid */
+/* Two column grid */
 .grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr);
     gap: var(--spacing-4);
-    margin-bottom: var(--spacing-8);
 }
 
 .card {
-    padding: var(--spacing-6);
     background: var(--color-white);
-    border: 1px solid var(--color-gray-200);
     border-radius: var(--radius-xl);
-    text-align: center;
+    padding: var(--spacing-5);
+    border: 1px solid var(--color-gray-100);
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-3);
+    transition: all var(--transition-normal);
+}
+
+.card:hover {
+    border-color: var(--color-gray-200);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.presenterCard {
+    border-top: 3px solid #0891b2;
+}
+
+.viewerCard {
+    border-top: 3px solid #8b5cf6;
+}
+
+.cardHeader {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-2);
 }
 
 .cardIcon {
-    font-size: 2rem;
-    display: block;
-    margin-bottom: var(--spacing-2);
+    font-size: var(--font-size-xl);
 }
 
 .cardTitle {
     font-size: var(--font-size-lg);
     font-weight: var(--font-weight-semibold);
     color: var(--color-black);
-    margin-bottom: var(--spacing-1);
 }
 
 .cardDesc {
     font-size: var(--font-size-sm);
     color: var(--color-gray-500);
-    margin-bottom: var(--spacing-4);
+    line-height: 1.5;
+}
+
+.joinForm {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-2);
+}
+
+.codeInput input {
+    font-family: monospace;
+    text-transform: uppercase;
+    text-align: center;
+    letter-spacing: 0.15em;
+    font-size: var(--font-size-lg);
 }
 
 .linkButton {
-    display: block;
-    margin-top: var(--spacing-3);
+    margin-top: var(--spacing-1);
+    padding: var(--spacing-2);
     background: none;
     border: none;
     color: var(--color-gray-500);
@@ -85,44 +120,21 @@
 }
 
 .linkButton:hover {
-    color: var(--color-black);
+    color: #0891b2;
 }
 
-.joinForm {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-3);
-}
-
-.joinForm input {
-    text-align: center;
-    font-family: monospace;
-    letter-spacing: 0.15em;
-    font-size: var(--font-size-xl);
-}
-
-/* How it works - compact horizontal */
+/* Steps - inviting design */
 .howItWorks {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--spacing-2);
-    padding: var(--spacing-4);
-    background: var(--color-gray-50);
+    background: var(--color-white);
     border-radius: var(--radius-lg);
+    padding: var(--spacing-4) var(--spacing-5);
+    border: 1px solid var(--color-gray-100);
 }
 
-.howItWorksLabel {
-    font-size: var(--font-size-xs);
-    font-weight: var(--font-weight-medium);
-    color: var(--color-gray-400);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-
-.steps {
+.stepsContainer {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: var(--spacing-3);
 }
 
@@ -130,38 +142,51 @@
     display: flex;
     align-items: center;
     gap: var(--spacing-2);
+}
+
+.stepNumber {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-bold);
+}
+
+.stepText {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-medium);
     color: var(--color-gray-600);
 }
 
-.step span:first-child {
-    font-size: var(--font-size-lg);
-}
-
-.arrow {
-    color: var(--color-gray-300);
+.stepDivider {
+    width: 40px;
+    height: 2px;
+    background: var(--color-gray-200);
+    border-radius: 1px;
 }
 
 /* Mobile adjustments */
 @media (max-width: 640px) {
     .page {
-        padding: var(--spacing-4) 0;
+        padding: var(--spacing-3) 0;
     }
 
     .grid {
         grid-template-columns: 1fr;
     }
 
-    .card {
-        padding: var(--spacing-5);
-    }
-
-    .steps {
+    .stepsContainer {
         flex-direction: column;
         gap: var(--spacing-2);
     }
 
-    .arrow {
-        transform: rotate(90deg);
+    .stepDivider {
+        width: 2px;
+        height: 20px;
     }
 }

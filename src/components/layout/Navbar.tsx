@@ -17,7 +17,7 @@ export function Navbar() {
         <nav className={styles.navbar}>
             <div className={styles.left}>
                 <button className={styles.logo} onClick={() => navigate('/')}>
-                    SlideViewer
+                    <img src="/logo.png" alt="JoinDeck" className={styles.logoImage} />
                 </button>
             </div>
 

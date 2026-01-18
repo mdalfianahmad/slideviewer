@@ -39,22 +39,24 @@ export function HomePage() {
                     {/* Hero */}
                     <header className={styles.hero}>
                         <h1 className={styles.title}>
-                            Share slides.
-                            <span className={styles.highlight}> Everyone follows.</span>
+                            Present together.
+                            <span className={styles.highlight}> Everyone stays in sync.</span>
                         </h1>
                         <p className={styles.subtitle}>
-                            Present from any device. Your audience joins with a code and sees slides in real-time.
+                            Upload your slides, share a code, and your audience follows along in real-time.
                         </p>
                     </header>
 
                     {/* Two-column layout */}
                     <div className={styles.grid}>
                         {/* Presenter side */}
-                        <div className={styles.card}>
-                            <span className={styles.cardIcon}>🎤</span>
-                            <h3 className={styles.cardTitle}>I'm Presenting</h3>
+                        <div className={`${styles.card} ${styles.presenterCard}`}>
+                            <div className={styles.cardHeader}>
+                                <span className={styles.cardIcon}>🎤</span>
+                                <h3 className={styles.cardTitle}>I'm Presenting</h3>
+                            </div>
                             <p className={styles.cardDesc}>
-                                Upload PDF slides and share with your audience
+                                Upload your PDF and get a shareable code instantly
                             </p>
                             {user ? (
                                 <Button fullWidth onClick={() => navigate('/upload')}>
@@ -75,51 +77,48 @@ export function HomePage() {
                             )}
                         </div>
 
-                        {/* Audience side */}
-                        <div className={styles.card}>
-                            <span className={styles.cardIcon}>👀</span>
-                            <h3 className={styles.cardTitle}>I'm Viewing</h3>
+                        {/* Viewer side */}
+                        <div className={`${styles.card} ${styles.viewerCard}`}>
+                            <div className={styles.cardHeader}>
+                                <span className={styles.cardIcon}>👀</span>
+                                <h3 className={styles.cardTitle}>I'm Viewing</h3>
+                            </div>
                             <p className={styles.cardDesc}>
-                                Join a presentation with an invite code
+                                Enter the code shared by your presenter
                             </p>
                             <form onSubmit={handleJoinSubmit} className={styles.joinForm}>
                                 <Input
+                                    type="text"
                                     placeholder="ABC123"
                                     value={inviteCode}
-                                    onChange={(e) => {
-                                        setInviteCode(e.target.value.toUpperCase());
-                                        setInviteError('');
-                                    }}
+                                    onChange={(e) => setInviteCode(e.target.value)}
+                                    className={styles.codeInput}
                                     error={inviteError}
-                                    maxLength={6}
-                                    aria-label="Invite code"
-                                    autoComplete="off"
-                                    autoCapitalize="characters"
+                                    maxLength={7}
                                 />
-                                <Button type="submit" variant="secondary" fullWidth>
-                                    Join
+                                <Button type="submit" fullWidth variant="secondary">
+                                    Join Presentation
                                 </Button>
                             </form>
                         </div>
                     </div>
 
-                    {/* How it works - compact */}
+                    {/* How it works - more inviting */}
                     <div className={styles.howItWorks}>
-                        <span className={styles.howItWorksLabel}>How it works:</span>
-                        <div className={styles.steps}>
+                        <div className={styles.stepsContainer}>
                             <div className={styles.step}>
-                                <span>📄</span>
-                                <span>Upload PDF</span>
+                                <div className={styles.stepNumber}>1</div>
+                                <span className={styles.stepText}>Upload PDF</span>
                             </div>
-                            <span className={styles.arrow}>→</span>
+                            <div className={styles.stepDivider}></div>
                             <div className={styles.step}>
-                                <span>🔗</span>
-                                <span>Share Code/QR</span>
+                                <div className={styles.stepNumber}>2</div>
+                                <span className={styles.stepText}>Share Code</span>
                             </div>
-                            <span className={styles.arrow}>→</span>
+                            <div className={styles.stepDivider}></div>
                             <div className={styles.step}>
-                                <span>🎯</span>
-                                <span>Present Live</span>
+                                <div className={styles.stepNumber}>3</div>
+                                <span className={styles.stepText}>Present Live</span>
                             </div>
                         </div>
                     </div>

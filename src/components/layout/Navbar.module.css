@@ -17,17 +17,21 @@
 }
 
 .logo {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-bold);
-    color: var(--color-black);
+    display: flex;
+    align-items: center;
     background: none;
     border: none;
     cursor: pointer;
     padding: 0;
 }
 
+.logoImage {
+    height: 32px;
+    width: auto;
+}
+
 .logo:hover {
-    opacity: 0.7;
+    opacity: 0.8;
 }
 
 .right {

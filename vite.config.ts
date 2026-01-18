@@ -8,24 +8,24 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
+      includeAssets: ['logo.png', 'robots.txt'],
       manifest: {
-        name: 'SlideViewer',
-        short_name: 'SlideViewer',
+        name: 'JoinDeck',
+        short_name: 'JoinDeck',
         description: 'Real-time presentation sharing',
-        theme_color: '#000000',
+        theme_color: '#0891b2',
         background_color: '#ffffff',
         display: 'standalone',
         orientation: 'any',
         start_url: '/',
         icons: [
           {
-            src: '/icon-192.png',
+            src: '/logo.png',
             sizes: '192x192',
             type: 'image/png',
           },
           {
-            src: '/icon-512.png',
+            src: '/logo.png',
             sizes: '512x512',
             type: 'image/png',
           },
