@@ -204,13 +204,16 @@
 }
 
 .stopBtn {
-    color: #dc2626;
-    opacity: 0.8;
+    color: #ffffff;
+    background: #dc2626;
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-2) var(--spacing-3);
+    opacity: 1;
 }
 
 .stopBtn:hover {
-    opacity: 1;
-    color: #b91c1c;
+    background: #b91c1c;
+    color: #ffffff;
 }
 
 /* Mobile */
