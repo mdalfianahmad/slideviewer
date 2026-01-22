@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { formatInviteCodeForDisplay, getJoinUrl } from '../lib/invite-code';
 import { getRecentPresentations } from '../lib/storage';
+import { useAuth } from '../context/AuthContext';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import { QRCodeDisplay } from '../components/ui/QRCodeDisplay';
@@ -12,6 +13,7 @@ import styles from './PresenterPage.module.css';
 export function PresenterPage() {
     const { presentationId } = useParams<{ presentationId: string }>();
     const navigate = useNavigate();
+    const { user } = useAuth();
     const pageRef = useRef<HTMLDivElement>(null);
     const [isCopied, setIsCopied] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -35,10 +37,6 @@ export function PresenterPage() {
             return;
         }
 
-        const recents = getRecentPresentations();
-        const owned = recents.find(p => p.id === presentationId && p.presenterToken);
-        setHasPresenterToken(!!owned?.presenterToken);
-
         async function fetchData() {
             try {
                 const { data: pres, error: presErr } = await supabase
@@ -51,22 +49,37 @@ export function PresenterPage() {
                     throw new Error('Presentation not found');
                 }
 
-                setPresentation(pres as Presentation);
-                setCurrentSlideIndex((pres as Presentation).current_slide_index);
+                const presentationData = pres as Presentation;
+                setPresentation(presentationData);
+                setCurrentSlideIndex(presentationData.current_slide_index);
 
-                // Mark as live and update last_presented_at
-                const { error: updateError } = await supabase
-                    .from('presentations')
-                    .update({
-                        is_live: true,
-                        last_presented_at: new Date().toISOString()
-                    })
-                    .eq('id', presentationId);
+                // Check for presenter access:
+                // 1. Check localStorage for presenter token (from recent presentations)
+                const recents = getRecentPresentations();
+                const owned = recents.find(p => p.id === presentationId && p.presenterToken);
+                const hasTokenInStorage = !!owned?.presenterToken;
+                
+                // 2. Check if user owns the presentation (user_id matches)
+                const isOwner = user && presentationData.user_id === user.id;
+                
+                // User has presenter access if they have the token OR they own the presentation
+                setHasPresenterToken(hasTokenInStorage || !!isOwner);
 
-                if (updateError) {
-                    console.error('Failed to update presentation:', updateError);
-                } else {
-                    console.log('Presentation marked as live, last_presented_at updated');
+                // Mark as live and update last_presented_at (only if user has presenter access)
+                if (hasTokenInStorage || isOwner) {
+                    const { error: updateError } = await supabase
+                        .from('presentations')
+                        .update({
+                            is_live: true,
+                            last_presented_at: new Date().toISOString()
+                        })
+                        .eq('id', presentationId);
+
+                    if (updateError) {
+                        console.error('Failed to update presentation:', updateError);
+                    } else {
+                        console.log('Presentation marked as live, last_presented_at updated');
+                    }
                 }
 
                 const { data: slideData, error: slideErr } = await supabase
@@ -99,7 +112,7 @@ export function PresenterPage() {
         }
 
         fetchData();
-    }, [presentationId]);
+    }, [presentationId, user]);
 
     // Track audience with Supabase Presence
     useEffect(() => {
