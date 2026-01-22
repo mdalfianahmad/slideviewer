@@ -373,6 +373,17 @@ export function PresenterPage() {
         currentSlide = slides[0];
     }
 
+    // Final safety check - if currentSlide is still null, return error
+    if (!currentSlide) {
+        return (
+            <div className={styles.error}>
+                <h2>Error</h2>
+                <p>Unable to load current slide</p>
+                <Button onClick={() => navigate('/')}>Back to Home</Button>
+            </div>
+        );
+    }
+
     return (
         <div className={styles.page} ref={pageRef}>
             {/* Slide Overview Modal */}
