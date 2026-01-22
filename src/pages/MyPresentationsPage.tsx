@@ -164,22 +164,22 @@ export function MyPresentationsPage() {
                                         <td className={styles.actionsCell}>
                                             {presentation.is_live ? (
                                                 <button
-                                                    className={`${styles.actionBtn} ${styles.stopBtn}`}
+                                                    className={styles.stopBtn}
                                                     onClick={(e) => handleStopPresentation(e, presentation.id)}
                                                     title="Stop presentation"
                                                 >
-                                                    ⏹️
+                                                    ⏹
                                                 </button>
                                             ) : (
                                                 <button
-                                                    className={styles.actionBtn}
+                                                    className={styles.playBtn}
                                                     onClick={(e) => {
                                                         e.stopPropagation();
                                                         navigate(`/present/${presentation.id}`);
                                                     }}
                                                     title="Start presenting"
                                                 >
-                                                    ▶️
+                                                    ▶
                                                 </button>
                                             )}
                                             <button
