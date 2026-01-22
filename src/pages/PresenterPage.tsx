@@ -114,6 +114,39 @@ export function PresenterPage() {
         fetchData();
     }, [presentationId, user]);
 
+    // Subscribe to realtime presentation updates
+    useEffect(() => {
+        if (!presentationId) return;
+
+        const updateChannel = supabase
+            .channel(`presenter:${presentationId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'presentations',
+                    filter: `id=eq.${presentationId}`,
+                },
+                (payload) => {
+                    const updated = payload.new as Presentation;
+                    setPresentation(updated);
+                    // Sync current slide index from database (only if different to avoid loops)
+                    setCurrentSlideIndex(prevIndex => {
+                        if (updated.current_slide_index !== prevIndex) {
+                            return updated.current_slide_index;
+                        }
+                        return prevIndex;
+                    });
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(updateChannel);
+        };
+    }, [presentationId]);
+
     // Track audience with Supabase Presence
     useEffect(() => {
         if (!presentationId) return;
@@ -276,8 +309,28 @@ export function PresenterPage() {
         }
     }, [presentation]);
 
+    // Fix slide index mismatch - if currentSlideIndex doesn't match any slide, use first slide
+    useEffect(() => {
+        if (slides.length > 0) {
+            const matchingSlide = slides.find(s => s.slide_number === currentSlideIndex);
+            if (!matchingSlide) {
+                // Index doesn't match, use first slide's number
+                const firstSlide = slides[0];
+                if (firstSlide) {
+                    setCurrentSlideIndex(firstSlide.slide_number);
+                }
+            }
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [slides.length]); // Only run when slides array length changes
+
     // Current and next slide
-    const currentSlide = slides.find(s => s.slide_number === currentSlideIndex);
+    // Find current slide, with fallback to first slide if index doesn't match
+    let currentSlide = slides.find(s => s.slide_number === currentSlideIndex);
+    if (!currentSlide && slides.length > 0) {
+        // If currentSlideIndex doesn't match, use the first slide
+        currentSlide = slides[0];
+    }
     const nextSlidePreview = slides.find(s => s.slide_number === currentSlideIndex + 1);
 
     if (isLoading) {
@@ -304,7 +357,8 @@ export function PresenterPage() {
         return null;
     }
 
-    if (!currentSlide) {
+    // Check if slides array is empty, not if currentSlide is null
+    if (slides.length === 0) {
         return (
             <div className={styles.error}>
                 <h2>No Slides</h2>
@@ -312,6 +366,11 @@ export function PresenterPage() {
                 <Button onClick={() => navigate('/')}>Back to Home</Button>
             </div>
         );
+    }
+
+    // Safety check - if somehow currentSlide is still null, use first slide
+    if (!currentSlide && slides.length > 0) {
+        currentSlide = slides[0];
     }
 
     return (
