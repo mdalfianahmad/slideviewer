@@ -7,6 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import { QRCodeDisplay } from '../components/ui/QRCodeDisplay';
+import { cacheSlides, getCachedSlide } from '../lib/cache';
 import type { Presentation, Slide } from '../types/database';
 import styles from './PresenterPage.module.css';
 
@@ -93,13 +94,51 @@ export function PresenterPage() {
                 const loadedSlides = (slideData as Slide[]) || [];
                 setSlides(loadedSlides);
 
-                // Preload all slide images
-                loadedSlides.forEach(slide => {
-                    const img = new Image();
-                    img.src = slide.image_url;
-                    if (slide.thumbnail_url) {
-                        const thumb = new Image();
-                        thumb.src = slide.thumbnail_url;
+                // Progressive caching: Load current + next 3 slides first
+                const currentIndex = presentationData.current_slide_index;
+                const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
+                
+                // Priority indices: current slide + next 3 slides
+                const priorityIndices: number[] = [];
+                for (let i = 0; i < 4 && (currentSlideIndexInArray + i) < loadedSlides.length; i++) {
+                    priorityIndices.push(currentSlideIndexInArray + i);
+                }
+
+                // Start caching with priority
+                cacheSlides(
+                    presentationId,
+                    loadedSlides.map(s => ({
+                        slideNumber: s.slide_number,
+                        imageUrl: s.image_url,
+                        thumbnailUrl: s.thumbnail_url,
+                    })),
+                    priorityIndices
+                ).catch(() => {
+                    // Ignore caching errors
+                });
+
+                // Preload priority slides immediately
+                priorityIndices.forEach(idx => {
+                    const slide = loadedSlides[idx];
+                    if (slide) {
+                        const img = new Image();
+                        img.src = slide.image_url;
+                        if (slide.thumbnail_url) {
+                            const thumb = new Image();
+                            thumb.src = slide.thumbnail_url;
+                        }
+                    }
+                });
+
+                // Preload remaining slides in background
+                loadedSlides.forEach((slide, idx) => {
+                    if (!priorityIndices.includes(idx)) {
+                        const img = new Image();
+                        img.src = slide.image_url;
+                        if (slide.thumbnail_url) {
+                            const thumb = new Image();
+                            thumb.src = slide.thumbnail_url;
+                        }
                     }
                 });
 

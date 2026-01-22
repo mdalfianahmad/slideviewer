@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
+import { cacheSlides, getCachedSlide, isSlideCached } from '../lib/cache';
 import type { Presentation, Slide } from '../types/database';
 import styles from './ViewerPage.module.css';
 
@@ -16,6 +17,9 @@ export function ViewerPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [hasEnded, setHasEnded] = useState(false);
+    const [cachedImageUrls, setCachedImageUrls] = useState<Map<number, string>>(new Map());
+    const cacheInitializedRef = useRef(false);
+    const slidesRef = useRef<Slide[]>([]);
 
     // Fetch initial data
     useEffect(() => {
@@ -54,13 +58,69 @@ export function ViewerPage() {
 
                 const loadedSlides = (slideData as Slide[]) || [];
                 setSlides(loadedSlides);
+                slidesRef.current = loadedSlides;
 
-                // Preload all slide images for instant switching
-                loadedSlides.forEach(slide => {
+                // Progressive caching: Load current + next 3 slides first, then rest in background
+                const currentIndex = typedPres.current_slide_index;
+                const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
+                
+                // Priority indices: current slide + next 3 slides
+                const priorityIndices: number[] = [];
+                for (let i = 0; i < 4 && (currentSlideIndexInArray + i) < loadedSlides.length; i++) {
+                    priorityIndices.push(currentSlideIndexInArray + i);
+                }
+
+                // Start caching with priority
+                cacheSlides(
+                    presentationId,
+                    loadedSlides.map(s => ({
+                        slideNumber: s.slide_number,
+                        imageUrl: s.image_url,
+                        thumbnailUrl: s.thumbnail_url,
+                    })),
+                    priorityIndices
+                ).catch(() => {
+                    // Ignore caching errors
+                });
+
+                // Preload priority slides immediately (for instant display)
+                const priorityPromises = priorityIndices.map(async (idx) => {
+                    const slide = loadedSlides[idx];
+                    if (!slide) return;
+
+                    // Try cache first, then fallback to network
+                    const cachedUrl = await getCachedSlide(presentationId, slide.slide_number);
+                    if (cachedUrl) {
+                        setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
+                    }
+
+                    // Also preload via Image for browser cache
                     const img = new Image();
                     img.src = slide.image_url;
                 });
 
+                await Promise.all(priorityPromises);
+
+                // Preload remaining slides in background
+                loadedSlides.forEach((slide, idx) => {
+                    if (!priorityIndices.includes(idx)) {
+                        // Check cache first
+                        isSlideCached(presentationId, slide.slide_number).then(cached => {
+                            if (cached) {
+                                getCachedSlide(presentationId, slide.slide_number).then(url => {
+                                    if (url) {
+                                        setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, url));
+                                    }
+                                });
+                            }
+                            // Also preload for browser cache
+                            const img = new Image();
+                            img.src = slide.image_url;
+                        });
+                    }
+                });
+
+                cacheInitializedRef.current = true;
                 setIsLoading(false);
             } catch (err) {
                 console.error('Viewer fetch error:', err);
@@ -90,10 +150,34 @@ export function ViewerPage() {
                     table: 'presentations',
                     filter: `id=eq.${presentationId}`,
                 },
-                (payload) => {
+                async (payload) => {
                     const updated = payload.new as Presentation;
                     setPresentation(updated);
-                    setCurrentSlideIndex(updated.current_slide_index);
+                    const newSlideIndex = updated.current_slide_index;
+                    setCurrentSlideIndex(newSlideIndex);
+
+                    // Preload next slides when slide changes
+                    if (cacheInitializedRef.current && slidesRef.current.length > 0) {
+                        const currentSlides = slidesRef.current;
+                        const currentSlideIndexInArray = currentSlides.findIndex(s => s.slide_number === newSlideIndex);
+                        if (currentSlideIndexInArray >= 0) {
+                            // Preload next 3 slides
+                            for (let i = 1; i <= 3 && (currentSlideIndexInArray + i) < currentSlides.length; i++) {
+                                const nextSlide = currentSlides[currentSlideIndexInArray + i];
+                                if (nextSlide) {
+                                    // Check cache first
+                                    getCachedSlide(presentationId, nextSlide.slide_number).then(cachedUrl => {
+                                        if (cachedUrl) {
+                                            setCachedImageUrls(prev => new Map(prev).set(nextSlide.slide_number, cachedUrl));
+                                        }
+                                    });
+                                    // Also preload for browser cache
+                                    const img = new Image();
+                                    img.src = nextSlide.image_url;
+                                }
+                            }
+                        }
+                    }
 
                     if (!updated.is_live) {
                         setHasEnded(true);
@@ -120,6 +204,11 @@ export function ViewerPage() {
     }, [presentationId]);
 
     const currentSlide = slides.find(s => s.slide_number === currentSlideIndex);
+    
+    // Get cached image URL if available, otherwise use original URL
+    const currentSlideImageUrl = currentSlide
+        ? (cachedImageUrls.get(currentSlide.slide_number) || currentSlide.image_url)
+        : null;
 
     // Loading
     if (isLoading) {
@@ -170,11 +259,19 @@ export function ViewerPage() {
     return (
         <div className={styles.page}>
             <div className={styles.slideContainer}>
-                <img
-                    src={currentSlide.image_url}
-                    alt={`Slide ${currentSlideIndex}`}
-                    className={styles.slideImage}
-                />
+                {currentSlideImageUrl && (
+                    <img
+                        src={currentSlideImageUrl}
+                        alt={`Slide ${currentSlideIndex}`}
+                        className={styles.slideImage}
+                        onError={(e) => {
+                            // Fallback to original URL if cached URL fails
+                            if (currentSlide && currentSlideImageUrl !== currentSlide.image_url) {
+                                (e.target as HTMLImageElement).src = currentSlide.image_url;
+                            }
+                        }}
+                    />
+                )}
             </div>
 
             <div className={styles.overlay}>
