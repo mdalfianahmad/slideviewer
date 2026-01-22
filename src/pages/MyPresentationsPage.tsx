@@ -46,6 +46,22 @@ export function MyPresentationsPage() {
         setPresentations(prev => prev.filter(p => p.id !== id));
     }, []);
 
+    const handleStopPresentation = useCallback(async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (!confirm('Stop this presentation? Viewers will see that it has ended.')) return;
+
+        const { error } = await supabase
+            .from('presentations')
+            .update({ is_live: false })
+            .eq('id', id);
+
+        if (!error) {
+            setPresentations(prev => 
+                prev.map(p => p.id === id ? { ...p, is_live: false } : p)
+            );
+        }
+    }, []);
+
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         return date.toLocaleDateString(undefined, {
@@ -146,16 +162,26 @@ export function MyPresentationsPage() {
                                             )}
                                         </td>
                                         <td className={styles.actionsCell}>
-                                            <button
-                                                className={styles.actionBtn}
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    navigate(`/present/${presentation.id}`);
-                                                }}
-                                                title="Start presenting"
-                                            >
-                                                ▶️
-                                            </button>
+                                            {presentation.is_live ? (
+                                                <button
+                                                    className={`${styles.actionBtn} ${styles.stopBtn}`}
+                                                    onClick={(e) => handleStopPresentation(e, presentation.id)}
+                                                    title="Stop presentation"
+                                                >
+                                                    ⏹️
+                                                </button>
+                                            ) : (
+                                                <button
+                                                    className={styles.actionBtn}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        navigate(`/present/${presentation.id}`);
+                                                    }}
+                                                    title="Start presenting"
+                                                >
+                                                    ▶️
+                                                </button>
+                                            )}
                                             <button
                                                 className={`${styles.actionBtn} ${styles.deleteBtn}`}
                                                 onClick={(e) => handleDelete(e, presentation.id)}

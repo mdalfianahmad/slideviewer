@@ -203,6 +203,16 @@
     opacity: 1;
 }
 
+.stopBtn {
+    color: #dc2626;
+    opacity: 0.8;
+}
+
+.stopBtn:hover {
+    opacity: 1;
+    color: #b91c1c;
+}
+
 /* Mobile */
 @media (max-width: 768px) {
     .pageHeader {
