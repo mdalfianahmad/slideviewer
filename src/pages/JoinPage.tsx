@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Container } from '../components/layout/Container';
 import { Button } from '../components/ui/Button';
@@ -16,13 +16,7 @@ export function JoinPage() {
     const [error, setError] = useState('');
     const [isValidating, setIsValidating] = useState(false);
 
-    useEffect(() => {
-        if (urlCode && isValidInviteCodeFormat(urlCode)) {
-            handleJoin(urlCode);
-        }
-    }, [urlCode]);
-
-    const handleJoin = async (code?: string) => {
+    const handleJoin = useCallback(async (code?: string) => {
         const codeToValidate = normalizeInviteCode(code || inviteCode);
 
         if (!codeToValidate) {
@@ -61,7 +55,13 @@ export function JoinPage() {
             setError(err instanceof Error ? err.message : 'Failed to join presentation');
             setIsValidating(false);
         }
-    };
+    }, [inviteCode, navigate]);
+
+    useEffect(() => {
+        if (urlCode && isValidInviteCodeFormat(urlCode)) {
+            handleJoin(urlCode);
+        }
+    }, [urlCode, handleJoin]);
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
