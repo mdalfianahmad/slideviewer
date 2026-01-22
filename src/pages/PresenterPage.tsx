@@ -230,25 +230,58 @@ export function PresenterPage() {
         }
     }, []);
 
-    const goToSlide = useCallback(async (index: number) => {
-        if (!presentationId || !hasPresenterToken) return;
-        const clampedIndex = Math.max(1, Math.min(index, slides.length));
-        setCurrentSlideIndex(clampedIndex);
+    const goToSlide = useCallback(async (slideNumber: number) => {
+        if (!presentationId || !hasPresenterToken || slides.length === 0) return;
+        
+        // Find the slide with this slide_number
+        const targetSlide = slides.find(s => s.slide_number === slideNumber);
+        if (!targetSlide) {
+            // If slide doesn't exist, find the closest one
+            const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
+            const closestSlide = sortedSlides.find(s => s.slide_number >= slideNumber) || sortedSlides[sortedSlides.length - 1];
+            if (closestSlide) {
+                slideNumber = closestSlide.slide_number;
+            } else {
+                return; // No slides available
+            }
+        }
+        
+        setCurrentSlideIndex(slideNumber);
         setShowSlideOverview(false); // Close overview when selecting a slide
 
         await supabase
             .from('presentations')
-            .update({ current_slide_index: clampedIndex })
+            .update({ current_slide_index: slideNumber })
             .eq('id', presentationId);
-    }, [presentationId, hasPresenterToken, slides.length]);
+    }, [presentationId, hasPresenterToken, slides]);
 
     const nextSlide = useCallback(() => {
-        if (currentSlideIndex < slides.length) goToSlide(currentSlideIndex + 1);
-    }, [currentSlideIndex, slides.length, goToSlide]);
+        if (slides.length === 0) return;
+        
+        // Find current slide's position in the sorted array
+        const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
+        const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+        
+        // Get next slide
+        if (currentIndex >= 0 && currentIndex < sortedSlides.length - 1) {
+            const nextSlideNumber = sortedSlides[currentIndex + 1].slide_number;
+            goToSlide(nextSlideNumber);
+        }
+    }, [currentSlideIndex, slides, goToSlide]);
 
     const prevSlide = useCallback(() => {
-        if (currentSlideIndex > 1) goToSlide(currentSlideIndex - 1);
-    }, [currentSlideIndex, goToSlide]);
+        if (slides.length === 0) return;
+        
+        // Find current slide's position in the sorted array
+        const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
+        const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+        
+        // Get previous slide
+        if (currentIndex > 0) {
+            const prevSlideNumber = sortedSlides[currentIndex - 1].slide_number;
+            goToSlide(prevSlideNumber);
+        }
+    }, [currentSlideIndex, slides, goToSlide]);
 
     const endPresentation = useCallback(async () => {
         if (!presentationId) return;
@@ -314,8 +347,9 @@ export function PresenterPage() {
         if (slides.length > 0) {
             const matchingSlide = slides.find(s => s.slide_number === currentSlideIndex);
             if (!matchingSlide) {
-                // Index doesn't match, use first slide's number
-                const firstSlide = slides[0];
+                // Index doesn't match, use first slide's number (sorted by slide_number)
+                const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
+                const firstSlide = sortedSlides[0];
                 if (firstSlide) {
                     setCurrentSlideIndex(firstSlide.slide_number);
                 }
@@ -331,7 +365,16 @@ export function PresenterPage() {
         // If currentSlideIndex doesn't match, use the first slide
         currentSlide = slides[0];
     }
-    const nextSlidePreview = slides.find(s => s.slide_number === currentSlideIndex + 1);
+    
+    // Find next slide by finding current position and getting the next one
+    let nextSlidePreview: Slide | undefined;
+    if (slides.length > 0 && currentSlide) {
+        const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
+        const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+        if (currentIndex >= 0 && currentIndex < sortedSlides.length - 1) {
+            nextSlidePreview = sortedSlides[currentIndex + 1];
+        }
+    }
 
     if (isLoading) {
         return (
@@ -383,6 +426,13 @@ export function PresenterPage() {
             </div>
         );
     }
+
+    // Calculate position in sorted slides for navigation buttons
+    const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
+    const currentPosition = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+    const isFirstSlide = currentPosition === 0;
+    const isLastSlide = currentPosition === sortedSlides.length - 1;
+    const slidePosition = currentPosition >= 0 ? currentPosition + 1 : 0;
 
     return (
         <div className={styles.page} ref={pageRef}>
@@ -478,15 +528,15 @@ export function PresenterPage() {
                     </Button>
 
                     <div className={styles.navigation}>
-                        <button className={styles.navButton} onClick={prevSlide} disabled={currentSlideIndex <= 1}>←</button>
+                        <button className={styles.navButton} onClick={prevSlide} disabled={isFirstSlide}>←</button>
                         <button
                             className={styles.slideCounter}
                             onClick={() => setShowSlideOverview(true)}
                         >
                             <span className={styles.slideCounterIcon}>▤</span>
-                            {currentSlideIndex} / {slides.length}
+                            {slidePosition} / {slides.length}
                         </button>
-                        <button className={styles.navButton} onClick={nextSlide} disabled={currentSlideIndex >= slides.length}>→</button>
+                        <button className={styles.navButton} onClick={nextSlide} disabled={isLastSlide}>→</button>
                     </div>
 
                     <button
