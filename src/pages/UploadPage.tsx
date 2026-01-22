@@ -27,6 +27,8 @@ interface UploadState {
     message: string;
     presentationId?: string;
     inviteCode?: string;
+    failedSlides?: number[];
+    retryCount?: number;
 }
 
 export function UploadPage() {
@@ -80,6 +82,8 @@ export function UploadPage() {
         if (!file) return;
 
         setError('');
+        // Clear any previous failed slides state
+        setUploadState(prev => ({ ...prev, failedSlides: undefined, retryCount: undefined }));
 
         try {
             // Step 1: Process PDF to images
@@ -144,15 +148,37 @@ export function UploadPage() {
                 throw new Error(`Failed to create presentation: ${insertError.message}`);
             }
 
-            // Step 3: Upload slide images
+            // Step 3: Upload slide images with retry logic
             setUploadState({
                 stage: 'uploading',
                 progress: 45,
                 message: 'Uploading slides...',
             });
 
+            // Retry function with exponential backoff
+            const retryUpload = async (
+                uploadFn: () => Promise<{ error: any }>,
+                maxRetries: number = 3,
+                baseDelay: number = 1000
+            ): Promise<{ error: any }> => {
+                let lastError = null;
+                for (let attempt = 0; attempt < maxRetries; attempt++) {
+                    const result = await uploadFn();
+                    if (!result.error) {
+                        return result;
+                    }
+                    lastError = result.error;
+                    if (attempt < maxRetries - 1) {
+                        const delay = baseDelay * Math.pow(2, attempt);
+                        await new Promise(resolve => setTimeout(resolve, delay));
+                    }
+                }
+                return { error: lastError };
+            };
+
             const slideRecords = [];
             const totalSlides = slides.length;
+            const failedSlides: number[] = [];
 
             for (let i = 0; i < slides.length; i++) {
                 const slide = slides[i];
@@ -164,41 +190,69 @@ export function UploadPage() {
                     message: `Uploading slide ${i + 1} of ${totalSlides}...`,
                 });
 
-                // Upload full image
+                // Upload full image with retry
                 const imagePath = `${presentationId}/slides/${slide.slideNumber}.png`;
-                const { error: imageError } = await supabase.storage
-                    .from(SLIDES_BUCKET)
-                    .upload(imagePath, slide.imageBlob);
+                const imageResult = await retryUpload(
+                    () => supabase.storage
+                        .from(SLIDES_BUCKET)
+                        .upload(imagePath, slide.imageBlob),
+                    3, // 3 retries
+                    1000 // 1s, 2s, 4s delays
+                );
 
-                if (imageError) {
-                    console.error(`Failed to upload slide ${slide.slideNumber}:`, imageError);
+                if (imageResult.error) {
+                    console.error(`Failed to upload slide ${slide.slideNumber} after retries:`, imageResult.error);
+                    failedSlides.push(slide.slideNumber);
                     continue;
                 }
 
-                // Upload thumbnail
+                // Upload thumbnail with retry
                 const thumbnailPath = `${presentationId}/thumbnails/${slide.slideNumber}.png`;
-                const { error: thumbError } = await supabase.storage
-                    .from(SLIDES_BUCKET)
-                    .upload(thumbnailPath, slide.thumbnailBlob);
+                const thumbResult = await retryUpload(
+                    () => supabase.storage
+                        .from(SLIDES_BUCKET)
+                        .upload(thumbnailPath, slide.thumbnailBlob),
+                    3, // 3 retries
+                    1000 // 1s, 2s, 4s delays
+                );
 
-                if (thumbError) {
-                    console.error(`Failed to upload thumbnail ${slide.slideNumber}:`, thumbError);
+                if (thumbResult.error) {
+                    console.warn(`Failed to upload thumbnail ${slide.slideNumber} after retries:`, thumbResult.error);
+                    // Continue even if thumbnail fails, but log it
                 }
 
                 slideRecords.push({
                     presentation_id: presentationId,
                     slide_number: slide.slideNumber,
                     image_url: getPublicUrl(SLIDES_BUCKET, imagePath),
-                    thumbnail_url: thumbError ? null : getPublicUrl(SLIDES_BUCKET, thumbnailPath),
+                    thumbnail_url: thumbResult.error ? null : getPublicUrl(SLIDES_BUCKET, thumbnailPath),
                 });
+            }
+
+            // Check if any slides failed
+            if (failedSlides.length > 0) {
+                const failedCount = failedSlides.length;
+                const successCount = slideRecords.length;
+                setError(
+                    `Warning: ${failedCount} slide${failedCount > 1 ? 's' : ''} failed to upload after retries. ` +
+                    `Only ${successCount} of ${totalSlides} slides were uploaded successfully. ` +
+                    `Failed slides: ${failedSlides.join(', ')}`
+                );
+                
+                // Still continue if we have at least some slides
+                if (slideRecords.length === 0) {
+                    throw new Error('All slides failed to upload. Please try again.');
+                }
             }
 
             // Insert slide records
             if (slideRecords.length > 0) {
                 const { error: slidesError } = await supabase.from('slides').insert(slideRecords);
                 if (slidesError) {
-                    console.error('Failed to insert slide records:', slidesError);
+                    throw new Error(`Failed to insert slide records: ${slidesError.message}`);
                 }
+            } else {
+                throw new Error('No slides were uploaded successfully');
             }
 
             // Update presentation status to ready
@@ -211,7 +265,7 @@ export function UploadPage() {
             addRecentPresentation({
                 id: presentationId,
                 title,
-                slideCount: slides.length,
+                slideCount: slideRecords.length, // Use actual uploaded count
                 createdAt: new Date().toISOString(),
                 thumbnailUrl: slideRecords[0]?.thumbnail_url || undefined,
                 presenterToken,
@@ -221,9 +275,12 @@ export function UploadPage() {
             setUploadState({
                 stage: 'complete',
                 progress: 100,
-                message: 'Upload complete!',
+                message: failedSlides.length > 0 
+                    ? `Upload complete with ${failedSlides.length} failed slide${failedSlides.length > 1 ? 's' : ''}`
+                    : 'Upload complete!',
                 presentationId,
                 inviteCode,
+                failedSlides: failedSlides.length > 0 ? failedSlides : undefined,
             });
         } catch (err) {
             console.error('Upload error:', err);
@@ -381,7 +438,22 @@ export function UploadPage() {
                         <div className={styles.complete}>
                             <span className={styles.successIcon}>✓</span>
                             <h2 className={styles.successTitle}>Upload Complete</h2>
-                            <p className={styles.successMessage}>Your slides are ready to present</p>
+                            <p className={styles.successMessage}>
+                                {uploadState.failedSlides && uploadState.failedSlides.length > 0
+                                    ? `Your presentation is ready, but ${uploadState.failedSlides.length} slide${uploadState.failedSlides.length > 1 ? 's' : ''} failed to upload.`
+                                    : 'Your slides are ready to present'}
+                            </p>
+                            {uploadState.failedSlides && uploadState.failedSlides.length > 0 && (
+                                <div className={styles.warningBox}>
+                                    <p className={styles.warningText}>
+                                        ⚠️ Failed slides: {uploadState.failedSlides.join(', ')}
+                                    </p>
+                                    <p className={styles.warningHint}>
+                                        These slides were not uploaded after multiple retry attempts. 
+                                        You can still present with the successfully uploaded slides.
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Invite Code Display */}
                             {uploadState.inviteCode && (

@@ -268,6 +268,28 @@
     margin-bottom: var(--spacing-6);
 }
 
+.warningBox {
+    background-color: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: var(--radius-md);
+    padding: var(--spacing-4);
+    margin-bottom: var(--spacing-6);
+    text-align: left;
+}
+
+.warningText {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    color: #856404;
+    margin-bottom: var(--spacing-2);
+}
+
+.warningHint {
+    font-size: var(--font-size-xs);
+    color: #856404;
+    margin: 0;
+}
+
 /* Invite Code Box */
 .inviteCodeBox {
     display: flex;
