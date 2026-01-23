@@ -438,6 +438,8 @@ export function PresenterPage() {
         currentSlide = slides[0];
     }
     
+    console.log('🎨 PresenterPage render - currentSlideIndex:', currentSlideIndex, 'slides.length:', slides.length, 'presentationId:', presentationId, 'currentSlide:', currentSlide ? 'found' : 'not found');
+    
     // Find next slide by finding current position and getting the next one
     let nextSlidePreview: Slide | undefined;
     if (slides.length > 0 && currentSlide) {
