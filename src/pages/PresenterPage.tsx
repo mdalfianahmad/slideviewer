@@ -306,10 +306,17 @@ export function PresenterPage() {
         setCurrentSlideIndex(slideNumber);
         setShowSlideOverview(false); // Close overview when selecting a slide
 
-        await supabase
+        console.log('🎯 Presenter updating database - slide:', slideNumber, 'presentationId:', presentationId);
+        const { error } = await supabase
             .from('presentations')
             .update({ current_slide_index: slideNumber })
             .eq('id', presentationId);
+        
+        if (error) {
+            console.error('❌ Failed to update database:', error);
+        } else {
+            console.log('✅ Database updated successfully');
+        }
     }, [presentationId, hasPresenterToken, slides]);
 
     const nextSlide = useCallback(() => {

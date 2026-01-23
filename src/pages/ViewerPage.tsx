@@ -146,6 +146,7 @@ export function ViewerPage() {
         const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
 
         // Subscribe to slide updates
+        console.log('🔌 Setting up realtime subscription for presentation:', presentationId);
         const updateChannel = supabase
             .channel(`viewer:${presentationId}`)
             .on(
@@ -157,9 +158,13 @@ export function ViewerPage() {
                     filter: `id=eq.${presentationId}`,
                 },
                 async (payload) => {
+                    console.log('🔔 REALTIME EVENT RECEIVED:', payload);
                     const updated = payload.new as Presentation;
+                    console.log('📊 Updated presentation:', updated);
+                    console.log('📄 New slide index:', updated.current_slide_index);
                     setPresentation(updated);
                     const newSlideIndex = updated.current_slide_index;
+                    console.log('✅ Calling setCurrentSlideIndex with:', newSlideIndex);
                     setCurrentSlideIndex(newSlideIndex);
 
                     // Preload next slides when slide changes
@@ -190,7 +195,18 @@ export function ViewerPage() {
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                console.log('🔌 Subscription status changed:', status);
+                if (status === 'SUBSCRIBED') {
+                    console.log('✅ Successfully subscribed to realtime updates');
+                } else if (status === 'CHANNEL_ERROR') {
+                    console.error('❌ Channel error - subscription failed');
+                } else if (status === 'CLOSED') {
+                    console.warn('⚠️ Channel closed');
+                } else if (status === 'TIMED_OUT') {
+                    console.error('❌ Subscription timed out');
+                }
+            });
 
         // Track presence for audience count
         const presenceChannel = supabase.channel(`presence:${presentationId}`, {
