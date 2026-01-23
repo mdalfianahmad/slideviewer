@@ -41,9 +41,6 @@ export function JoinPage() {
         setDebugInfo(`Verifying code: ${codeToValidate}`);
 
         try {
-            // Check Supabase connection first
-            const { data: healthCheck } = await supabase.from('presentations').select('id').limit(1);
-            
             // Lookup presentation by invite code
             // Code is normalized to uppercase to match database storage
             const { data: presentation, error: fetchError } = await supabase
