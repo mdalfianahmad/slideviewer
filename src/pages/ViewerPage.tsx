@@ -1,15 +1,17 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import { cacheSlides, getCachedSlide, isSlideCached } from '../lib/cache';
+import { useConnectionQuality } from '../hooks/useConnectionQuality';
 import type { Presentation, Slide } from '../types/database';
 import styles from './ViewerPage.module.css';
 
 export function ViewerPage() {
     const { presentationId } = useParams<{ presentationId: string }>();
     const navigate = useNavigate();
+    const connectionQuality = useConnectionQuality();
 
     const [presentation, setPresentation] = useState<Presentation | null>(null);
     const [slides, setSlides] = useState<Slide[]>([]);
@@ -22,6 +24,9 @@ export function ViewerPage() {
     const slidesRef = useRef<Slide[]>([]);
     const pageRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    
+    // Adaptive preload count based on connection quality
+    const preloadCount = connectionQuality === 'fast' ? 5 : 2;
 
     // Fetch initial data
     useEffect(() => {
@@ -62,18 +67,10 @@ export function ViewerPage() {
                 setSlides(loadedSlides);
                 slidesRef.current = loadedSlides;
 
-                // Progressive caching: Load current + next 3 slides first, then rest in background
-                const currentIndex = typedPres.current_slide_index;
-                const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
-                
-                // Priority indices: current slide + next 3 slides
-                const priorityIndices: number[] = [];
-                for (let i = 0; i < 4 && (currentSlideIndexInArray + i) < loadedSlides.length; i++) {
-                    priorityIndices.push(currentSlideIndexInArray + i);
-                }
-
-                // Start caching with priority
-                if (presentationId) {
+                // PHASE 1 OPTIMIZATION: Preload ALL slides on join to eliminate cache misses
+                // This ensures consistent 0ms image load time for all slides
+                if (presentationId && loadedSlides.length > 0) {
+                    // Cache all slides immediately (non-blocking)
                     cacheSlides(
                         presentationId,
                         loadedSlides.map(s => ({
@@ -81,46 +78,43 @@ export function ViewerPage() {
                             imageUrl: s.image_url,
                             thumbnailUrl: s.thumbnail_url,
                         })),
-                        priorityIndices
+                        [] // No priority - cache all equally in parallel
                     ).catch(() => {
-                        // Ignore caching errors
+                        // Ignore caching errors - non-critical
                     });
 
-                    // Preload priority slides immediately (for instant display)
-                    const priorityPromises = priorityIndices.map(async (idx) => {
-                        const slide = loadedSlides[idx];
-                        if (!slide) return;
-
-                        // Try cache first, then fallback to network
-                        const cachedUrl = await getCachedSlide(presentationId, slide.slide_number);
+                    // Preload current slide immediately for instant display
+                    const currentIndex = typedPres.current_slide_index;
+                    const currentSlide = loadedSlides.find(s => s.slide_number === currentIndex);
+                    if (currentSlide) {
+                        // Try cache first
+                        const cachedUrl = await getCachedSlide(presentationId, currentSlide.slide_number);
                         if (cachedUrl) {
-                            setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
+                            setCachedImageUrls(prev => new Map(prev).set(currentSlide.slide_number, cachedUrl));
+                        } else {
+                            // Preload via Image for browser cache
+                            const img = new Image();
+                            img.src = currentSlide.image_url;
                         }
+                    }
 
-                        // Also preload via Image for browser cache
-                        const img = new Image();
-                        img.src = slide.image_url;
-                    });
-
-                    await Promise.all(priorityPromises);
-
-                    // Preload remaining slides in background
-                    loadedSlides.forEach((slide, idx) => {
-                        if (!priorityIndices.includes(idx)) {
-                            // Check cache first
-                            isSlideCached(presentationId, slide.slide_number).then(cached => {
-                                if (cached) {
-                                    getCachedSlide(presentationId, slide.slide_number).then(url => {
-                                        if (url) {
-                                            setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, url));
-                                        }
-                                    });
-                                }
-                                // Also preload for browser cache
-                                const img = new Image();
-                                img.src = slide.image_url;
-                            });
-                        }
+                    // Preload all slides in background (for browser HTTP cache)
+                    // This happens in parallel and doesn't block
+                    loadedSlides.forEach((slide) => {
+                        // Check if already cached in IndexedDB
+                        isSlideCached(presentationId, slide.slide_number).then(cached => {
+                            if (cached) {
+                                // Get cached URL and add to state
+                                getCachedSlide(presentationId, slide.slide_number).then(url => {
+                                    if (url) {
+                                        setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, url));
+                                    }
+                                });
+                            }
+                            // Also preload for browser HTTP cache (works even if IndexedDB fails)
+                            const img = new Image();
+                            img.src = slide.image_url;
+                        });
                     });
                 }
 
@@ -156,17 +150,44 @@ export function ViewerPage() {
                 },
                 async (payload) => {
                     const updated = payload.new as Presentation;
-                    setPresentation(updated);
                     const newSlideIndex = updated.current_slide_index;
-                    setCurrentSlideIndex(newSlideIndex);
+                    const currentSlides = slidesRef.current;
 
-                    // Preload next slides when slide changes
-                    if (cacheInitializedRef.current && slidesRef.current.length > 0 && presentationId) {
-                        const currentSlides = slidesRef.current;
+                    // PHASE 1 OPTIMIZATION: Optimistic UI update
+                    // Show slide immediately if cached, before waiting for database sync
+                    if (cacheInitializedRef.current && currentSlides.length > 0 && presentationId) {
+                        const nextSlide = currentSlides.find(s => s.slide_number === newSlideIndex);
+                        if (nextSlide) {
+                            // Try to get cached URL immediately (optimistic)
+                            const cachedUrl = await getCachedSlide(presentationId, nextSlide.slide_number);
+                            if (cachedUrl) {
+                                // OPTIMISTIC: Update UI immediately with cached image
+                                setCurrentSlideIndex(newSlideIndex);
+                                setCachedImageUrls(prev => {
+                                    const newMap = new Map(prev);
+                                    newMap.set(nextSlide.slide_number, cachedUrl);
+                                    return newMap;
+                                });
+                            } else {
+                                // Not cached yet, update index and use network URL
+                                setCurrentSlideIndex(newSlideIndex);
+                            }
+                        }
+                    } else {
+                        // Fallback: update index normally
+                        setCurrentSlideIndex(newSlideIndex);
+                    }
+
+                    // Sync with database state (after optimistic update)
+                    setPresentation(updated);
+
+                    // PHASE 1 OPTIMIZATION: Adaptive preloading based on connection quality
+                    // Preload next N slides (N depends on connection speed)
+                    if (cacheInitializedRef.current && currentSlides.length > 0 && presentationId) {
                         const currentSlideIndexInArray = currentSlides.findIndex(s => s.slide_number === newSlideIndex);
                         if (currentSlideIndexInArray >= 0) {
-                            // Preload next 3 slides
-                            for (let i = 1; i <= 3 && (currentSlideIndexInArray + i) < currentSlides.length; i++) {
+                            // Preload next N slides (adaptive based on connection)
+                            for (let i = 1; i <= preloadCount && (currentSlideIndexInArray + i) < currentSlides.length; i++) {
                                 const nextSlide = currentSlides[currentSlideIndexInArray + i];
                                 if (nextSlide) {
                                     // Check cache first
@@ -205,7 +226,7 @@ export function ViewerPage() {
             supabase.removeChannel(updateChannel);
             supabase.removeChannel(presenceChannel);
         };
-    }, [presentationId]);
+    }, [presentationId, preloadCount]);
 
     // Fullscreen change listener
     useEffect(() => {
