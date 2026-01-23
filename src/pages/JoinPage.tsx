@@ -94,8 +94,9 @@ export function JoinPage() {
             navigate(`/view/${typedPresentation.id}`);
         } catch (err) {
             const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            const errorStack = err instanceof Error ? err.stack : String(err);
             setError(`Failed to join: ${errorMessage}`);
-            setDebugInfo(`Exception: ${errorMessage}`);
+            setDebugInfo(`Exception caught: ${errorMessage}\nStack: ${errorStack?.substring(0, 200)}`);
             setIsValidating(false);
         }
     }, [inviteCode, navigate]);
@@ -165,18 +166,48 @@ export function JoinPage() {
                     </Button>
                 </form>
 
-                {/* Debug info for mobile users */}
-                {debugInfo && (
+                {/* Error message */}
+                {error && (
                     <div style={{ 
-                        marginTop: '1rem', 
-                        padding: '0.5rem', 
+                        marginTop: '1rem',
+                        padding: '0.75rem',
+                        fontSize: '0.875rem',
+                        color: '#d32f2f',
+                        backgroundColor: '#ffebee',
+                        borderRadius: '4px',
+                        border: '1px solid #ffcdd2',
+                        wordBreak: 'break-word'
+                    }}>
+                        <strong>Error:</strong> {error}
+                    </div>
+                )}
+
+                {/* Debug info for mobile users - always show when there's debug info or error */}
+                {(debugInfo || error) && (
+                    <div style={{ 
+                        marginTop: '0.5rem', 
+                        padding: '0.75rem', 
                         fontSize: '0.75rem', 
                         color: '#666',
                         backgroundColor: '#f5f5f5',
                         borderRadius: '4px',
-                        wordBreak: 'break-all'
+                        wordBreak: 'break-all',
+                        fontFamily: 'monospace',
+                        border: '1px solid #e0e0e0'
                     }}>
-                        Debug: {debugInfo}
+                        {debugInfo ? (
+                            <>
+                                <strong>Debug Info:</strong><br />
+                                {debugInfo}
+                            </>
+                        ) : error ? (
+                            <>
+                                <strong>Debug:</strong> Error occurred but no debug info available.<br />
+                                URL Code: "{urlCode || 'none'}"<br />
+                                Normalized: "{normalizeInviteCode(urlCode || inviteCode)}"<br />
+                                Valid Format: {isValidInviteCodeFormat(urlCode || inviteCode) ? 'Yes' : 'No'}
+                            </>
+                        ) : null}
                     </div>
                 )}
 
