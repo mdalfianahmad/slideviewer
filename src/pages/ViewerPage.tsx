@@ -9,7 +9,9 @@ import type { Presentation, Slide } from '../types/database';
 import styles from './ViewerPage.module.css';
 
 export function ViewerPage() {
+    console.log('🚀 ViewerPage component rendered');
     const { presentationId } = useParams<{ presentationId: string }>();
+    console.log('📋 presentationId from URL:', presentationId);
     const navigate = useNavigate();
     const viewportSize = useViewportSize();
 
@@ -338,8 +340,23 @@ export function ViewerPage() {
     // PHASE 3: Image sizing optimization - calculate optimal width
     const optimalWidth = Math.min(viewportSize.width * viewportSize.pixelRatio, 1920);
     
+    console.log('🎨 ViewerPage render - currentSlideIndex:', currentSlideIndex, 'slides.length:', slides.length, 'presentationId:', presentationId);
+    
     return (
         <div className={styles.page} ref={pageRef}>
+            {/* Debug indicator - remove after fixing */}
+            <div style={{
+                position: 'fixed',
+                top: 10,
+                left: 10,
+                background: 'yellow',
+                padding: '5px 10px',
+                fontSize: '12px',
+                zIndex: 9999,
+                border: '2px solid red'
+            }}>
+                DEBUG: Slide {currentSlideIndex} | ID: {presentationId?.substring(0, 8)}...
+            </div>
             <div className={styles.slideContainer}>
                 {currentSlideImageUrl && (
                     <img
