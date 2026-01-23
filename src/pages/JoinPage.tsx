@@ -33,6 +33,8 @@ export function JoinPage() {
         setError('');
 
         try {
+            console.log('Attempting to verify code:', codeToValidate);
+            
             // Lookup presentation by invite code
             // Code is normalized to uppercase to match database storage
             const { data: presentation, error: fetchError } = await supabase
@@ -41,6 +43,13 @@ export function JoinPage() {
                 .eq('invite_code', codeToValidate)
                 .maybeSingle();
 
+            console.log('Query result:', { 
+                hasData: !!presentation, 
+                hasError: !!fetchError,
+                error: fetchError 
+            });
+
+            // Check for actual database errors
             if (fetchError) {
                 // Log detailed error for debugging
                 console.error('Database error when verifying code:', {
@@ -49,8 +58,22 @@ export function JoinPage() {
                     details: fetchError.details,
                     hint: fetchError.hint,
                     errorCode: fetchError.code,
+                    fullError: fetchError,
                 });
-                throw new Error('Failed to verify code. Please check your connection and try again.');
+                
+                // PGRST116 is "not found" - treat as invalid code, not error
+                if (fetchError.code === 'PGRST116' || 
+                    fetchError.message?.toLowerCase().includes('no rows') ||
+                    fetchError.message?.toLowerCase().includes('not found')) {
+                    setError('Invalid invite code. Please check and try again.');
+                    setIsValidating(false);
+                    return;
+                }
+                
+                // Real database/network error
+                setError('Failed to verify code. Please check your connection and try again.');
+                setIsValidating(false);
+                return;
             }
 
             if (!presentation) {
@@ -59,10 +82,11 @@ export function JoinPage() {
                 return;
             }
 
+            console.log('Code verified, navigating to presentation:', presentation.id);
             const typedPresentation = presentation as Presentation;
             navigate(`/view/${typedPresentation.id}`);
         } catch (err) {
-            console.error('Join error:', err);
+            console.error('Join error (catch block):', err);
             setError(err instanceof Error ? err.message : 'Failed to join presentation');
             setIsValidating(false);
         }
