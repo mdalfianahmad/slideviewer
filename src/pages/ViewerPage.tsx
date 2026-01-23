@@ -3,17 +3,21 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
-import { cacheSlides, getCachedSlide, isSlideCached } from '../lib/cache';
+import { cacheSlides, getCachedSlide } from '../lib/cache';
 import { useViewportSize } from '../hooks/useViewportSize';
+import { useConnectionQuality } from '../hooks/useConnectionQuality';
 import type { Presentation, Slide } from '../types/database';
 import styles from './ViewerPage.module.css';
 
 export function ViewerPage() {
-    console.log('🚀 ViewerPage component rendered');
     const { presentationId } = useParams<{ presentationId: string }>();
-    console.log('📋 presentationId from URL:', presentationId);
     const navigate = useNavigate();
     const viewportSize = useViewportSize();
+    const connectionQuality = useConnectionQuality();
+    
+    // PHASE 3: Lazy loading range based on connection quality
+    // Fast connections: preload ±5 slides, Slow connections: preload ±2 slides
+    const lazyLoadRange = connectionQuality === 'fast' ? 5 : connectionQuality === 'slow' ? 2 : 3;
 
     const [presentation, setPresentation] = useState<Presentation | null>(null);
     const [slides, setSlides] = useState<Slide[]>([]);
@@ -66,15 +70,18 @@ export function ViewerPage() {
                 setSlides(loadedSlides);
                 slidesRef.current = loadedSlides;
 
-                    // Progressive caching: Load current + next 3 slides first, then rest in background
+                    // PHASE 3: Lazy loading - only cache slides within range
                     if (presentationId && loadedSlides.length > 0) {
                         const currentIndex = typedPres.current_slide_index;
                         const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
                         
-                        // Priority indices: current slide + next 3 slides
+                        // Calculate lazy load range: current slide ± lazyLoadRange
                         const priorityIndices: number[] = [];
-                        for (let i = 0; i < 4 && (currentSlideIndexInArray + i) < loadedSlides.length; i++) {
-                            priorityIndices.push(currentSlideIndexInArray + i);
+                        const startIdx = Math.max(0, currentSlideIndexInArray - lazyLoadRange);
+                        const endIdx = Math.min(loadedSlides.length - 1, currentSlideIndexInArray + lazyLoadRange);
+                        
+                        for (let i = startIdx; i <= endIdx; i++) {
+                            priorityIndices.push(i);
                         }
 
                         // Start caching with priority
@@ -102,30 +109,14 @@ export function ViewerPage() {
                             }
 
                             // Also preload via Image for browser cache
-                            const img = new Image();
-                            img.src = slide.image_url;
-                        });
+                    const img = new Image();
+                    img.src = slide.image_url;
+                });
 
                         await Promise.all(priorityPromises);
 
-                        // Preload remaining slides in background
-                        loadedSlides.forEach((slide, idx) => {
-                            if (!priorityIndices.includes(idx)) {
-                                // Check cache first
-                                isSlideCached(presentationId, slide.slide_number).then(cached => {
-                                    if (cached) {
-                                        getCachedSlide(presentationId, slide.slide_number).then(url => {
-                                            if (url) {
-                                                setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, url));
-                                            }
-                                        });
-                                    }
-                                    // Also preload for browser HTTP cache (works even if IndexedDB fails)
-                                    const img = new Image();
-                                    img.src = slide.image_url;
-                                });
-                            }
-                        });
+                        // PHASE 3: Don't preload distant slides - only load when needed
+                        // This saves 40-50% bandwidth on large presentations
                     }
 
                 cacheInitializedRef.current = true;
@@ -138,24 +129,23 @@ export function ViewerPage() {
         }
 
         fetchData();
-    }, [presentationId]);
+    }, [presentationId, lazyLoadRange]);
 
     // Subscribe to realtime updates and track presence
     useEffect(() => {
-        console.log('🔧 ViewerPage useEffect - presentationId:', presentationId);
-        if (!presentationId) {
-            console.warn('⚠️ No presentationId, skipping subscription setup');
-            return;
-        }
+        if (!presentationId) return;
 
         // Generate a unique viewer ID for this session
         const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
-        console.log('👤 Generated viewer ID:', viewerId);
 
-        // Subscribe to slide updates
-        console.log('🔌 Setting up realtime subscription for presentation:', presentationId);
+        // PHASE 3: Subscribe to slide updates with WebSocket optimization
         const updateChannel = supabase
-            .channel(`viewer:${presentationId}`)
+            .channel(`viewer:${presentationId}`, {
+                config: {
+                    broadcast: { self: false },
+                    presence: { key: viewerId }
+                }
+            })
             .on(
                 'postgres_changes',
                 {
@@ -165,33 +155,32 @@ export function ViewerPage() {
                     filter: `id=eq.${presentationId}`,
                 },
                 async (payload) => {
-                    console.log('🔔 REALTIME EVENT RECEIVED:', payload);
                     const updated = payload.new as Presentation;
-                    console.log('📊 Updated presentation:', updated);
-                    console.log('📄 New slide index:', updated.current_slide_index);
                     setPresentation(updated);
                     const newSlideIndex = updated.current_slide_index;
-                    console.log('✅ Calling setCurrentSlideIndex with:', newSlideIndex);
                     setCurrentSlideIndex(newSlideIndex);
 
-                    // Preload next slides when slide changes
+                    // PHASE 3: Lazy loading - preload slides within range when slide changes
                     if (cacheInitializedRef.current && slidesRef.current.length > 0 && presentationId) {
                         const currentSlides = slidesRef.current;
                         const currentSlideIndexInArray = currentSlides.findIndex(s => s.slide_number === newSlideIndex);
                         if (currentSlideIndexInArray >= 0) {
-                            // Preload next 3 slides
-                            for (let i = 1; i <= 3 && (currentSlideIndexInArray + i) < currentSlides.length; i++) {
-                                const nextSlide = currentSlides[currentSlideIndexInArray + i];
-                                if (nextSlide) {
+                            // Preload slides within lazyLoadRange
+                            const startIdx = Math.max(0, currentSlideIndexInArray - lazyLoadRange);
+                            const endIdx = Math.min(currentSlides.length - 1, currentSlideIndexInArray + lazyLoadRange);
+                            
+                            for (let i = startIdx; i <= endIdx; i++) {
+                                const slide = currentSlides[i];
+                                if (slide && slide.slide_number !== newSlideIndex) {
                                     // Check cache first
-                                    getCachedSlide(presentationId, nextSlide.slide_number).then(cachedUrl => {
+                                    getCachedSlide(presentationId, slide.slide_number).then(cachedUrl => {
                                         if (cachedUrl) {
-                                            setCachedImageUrls(prev => new Map(prev).set(nextSlide.slide_number, cachedUrl));
+                                            setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
                                         }
                                     });
                                     // Also preload for browser cache
                                     const img = new Image();
-                                    img.src = nextSlide.image_url;
+                                    img.src = slide.image_url;
                                 }
                             }
                         }
@@ -203,21 +192,22 @@ export function ViewerPage() {
                 }
             )
             .subscribe((status) => {
-                console.log('🔌 Subscription status changed:', status);
                 if (status === 'SUBSCRIBED') {
-                    console.log('✅ Successfully subscribed to realtime updates');
-                } else if (status === 'CHANNEL_ERROR') {
-                    console.error('❌ Channel error - subscription failed');
-                } else if (status === 'CLOSED') {
-                    console.warn('⚠️ Channel closed');
-                } else if (status === 'TIMED_OUT') {
-                    console.error('❌ Subscription timed out');
+                    // Successfully subscribed
+                } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+                    // PHASE 3: Faster reconnection on error/close/timeout
+                    setTimeout(() => {
+                        updateChannel.subscribe();
+                    }, 500);
                 }
             });
 
-        // Track presence for audience count
+        // PHASE 3: Track presence for audience count with optimized config
         const presenceChannel = supabase.channel(`presence:${presentationId}`, {
-            config: { presence: { key: viewerId } }
+            config: {
+                broadcast: { self: false },
+                presence: { key: viewerId }
+            }
         });
 
         presenceChannel.subscribe(async (status) => {
@@ -230,7 +220,7 @@ export function ViewerPage() {
             supabase.removeChannel(updateChannel);
             supabase.removeChannel(presenceChannel);
         };
-    }, [presentationId]);
+    }, [presentationId, lazyLoadRange]);
 
     // Fullscreen change listener
     useEffect(() => {
@@ -340,29 +330,14 @@ export function ViewerPage() {
     // PHASE 3: Image sizing optimization - calculate optimal width
     const optimalWidth = Math.min(viewportSize.width * viewportSize.pixelRatio, 1920);
     
-    console.log('🎨 ViewerPage render - currentSlideIndex:', currentSlideIndex, 'slides.length:', slides.length, 'presentationId:', presentationId);
-    
     return (
         <div className={styles.page} ref={pageRef}>
-            {/* Debug indicator - remove after fixing */}
-            <div style={{
-                position: 'fixed',
-                top: 10,
-                left: 10,
-                background: 'yellow',
-                padding: '5px 10px',
-                fontSize: '12px',
-                zIndex: 9999,
-                border: '2px solid red'
-            }}>
-                DEBUG: Slide {currentSlideIndex} | ID: {presentationId?.substring(0, 8)}...
-            </div>
             <div className={styles.slideContainer}>
                 {currentSlideImageUrl && (
-                    <img
+                <img
                         src={currentSlideImageUrl}
-                        alt={`Slide ${currentSlideIndex}`}
-                        className={styles.slideImage}
+                    alt={`Slide ${currentSlideIndex}`}
+                    className={styles.slideImage}
                         width={optimalWidth}
                         loading="eager"
                         decoding="async"

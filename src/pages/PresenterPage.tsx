@@ -208,8 +208,12 @@ export function PresenterPage() {
     useEffect(() => {
         if (!presentationId) return;
 
+        // PHASE 3: Optimized presence channel
         const channel = supabase.channel(`presence:${presentationId}`, {
-            config: { presence: { key: 'presenter' } }
+            config: {
+                broadcast: { self: false },
+                presence: { key: 'presenter' }
+            }
         });
 
         channel
@@ -437,8 +441,6 @@ export function PresenterPage() {
         // If currentSlideIndex doesn't match, use the first slide
         currentSlide = slides[0];
     }
-    
-    console.log('🎨 PresenterPage render - currentSlideIndex:', currentSlideIndex, 'slides.length:', slides.length, 'presentationId:', presentationId, 'currentSlide:', currentSlide ? 'found' : 'not found');
     
     // Find next slide by finding current position and getting the next one
     let nextSlidePreview: Slide | undefined;

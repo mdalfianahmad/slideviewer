@@ -62,15 +62,15 @@ export async function cacheSlide(
     thumbnailUrl: string | null = null
 ): Promise<void> {
     try {
-        const db = await initDB();
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-
-        // Fetch and cache both images
+        // Fetch images BEFORE opening transaction to avoid transaction timeout
         const [imageBlob, thumbnailBlob] = await Promise.all([
             urlToBlob(imageUrl),
             thumbnailUrl ? urlToBlob(thumbnailUrl).catch(() => null) : Promise.resolve(null),
         ]);
+
+        const db = await initDB();
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
 
         const cachedSlide: CachedSlide = {
             presentationId,
@@ -83,9 +83,17 @@ export async function cacheSlide(
         };
 
         await new Promise<void>((resolve, reject) => {
+            // Ensure transaction doesn't complete before request
+            transaction.oncomplete = () => resolve();
+            transaction.onerror = () => reject(transaction.error);
+            
             const request = store.put(cachedSlide);
-            request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
+            
+            // If request succeeds, wait for transaction to complete
+            request.onsuccess = () => {
+                // Transaction will complete automatically, oncomplete will fire
+            };
         });
     } catch (error) {
         console.warn('Failed to cache slide:', error);
