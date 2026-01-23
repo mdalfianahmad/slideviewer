@@ -20,6 +20,8 @@ export function ViewerPage() {
     const [cachedImageUrls, setCachedImageUrls] = useState<Map<number, string>>(new Map());
     const cacheInitializedRef = useRef(false);
     const slidesRef = useRef<Slide[]>([]);
+    const pageRef = useRef<HTMLDivElement>(null);
+    const [isFullscreen, setIsFullscreen] = useState(false);
 
     // Fetch initial data
     useEffect(() => {
@@ -205,6 +207,58 @@ export function ViewerPage() {
         };
     }, [presentationId]);
 
+    // Fullscreen change listener
+    useEffect(() => {
+        const handleFullscreenChange = () => {
+            setIsFullscreen(!!(
+                document.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).mozFullScreenElement
+            ));
+        };
+        document.addEventListener('fullscreenchange', handleFullscreenChange);
+        document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+        return () => {
+            document.removeEventListener('fullscreenchange', handleFullscreenChange);
+            document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+            document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+        };
+    }, []);
+
+    const toggleFullscreen = useCallback(async () => {
+        try {
+            const elem = pageRef.current;
+            if (!elem) return;
+
+            const isCurrentlyFullscreen = !!(
+                document.fullscreenElement ||
+                (document as any).webkitFullscreenElement ||
+                (document as any).mozFullScreenElement
+            );
+
+            if (isCurrentlyFullscreen) {
+                if (document.exitFullscreen) {
+                    await document.exitFullscreen();
+                } else if ((document as any).webkitExitFullscreen) {
+                    (document as any).webkitExitFullscreen();
+                } else if ((document as any).mozCancelFullScreen) {
+                    (document as any).mozCancelFullScreen();
+                }
+            } else {
+                if (elem.requestFullscreen) {
+                    await elem.requestFullscreen();
+                } else if ((elem as any).webkitRequestFullscreen) {
+                    (elem as any).webkitRequestFullscreen();
+                } else if ((elem as any).mozRequestFullScreen) {
+                    (elem as any).mozRequestFullScreen();
+                }
+            }
+        } catch (err) {
+            console.error('Fullscreen error:', err);
+        }
+    }, []);
+
     const currentSlide = slides.find(s => s.slide_number === currentSlideIndex);
     
     // Get cached image URL if available, otherwise use original URL
@@ -259,7 +313,7 @@ export function ViewerPage() {
     }
 
     return (
-        <div className={styles.page}>
+        <div className={styles.page} ref={pageRef}>
             <div className={styles.slideContainer}>
                 {currentSlideImageUrl && (
                     <img
@@ -280,6 +334,14 @@ export function ViewerPage() {
                 <div className={styles.slideCounter}>
                     {currentSlideIndex} / {slides.length}
                 </div>
+                <button
+                    className={styles.fullscreenButton}
+                    onClick={toggleFullscreen}
+                    aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                    title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                >
+                    {isFullscreen ? '⤓' : '⤢'}
+                </button>
             </div>
         </div>
     );
