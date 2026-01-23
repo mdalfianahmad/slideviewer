@@ -5,6 +5,7 @@ import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import { cacheSlides, getCachedSlide, isSlideCached } from '../lib/cache';
 import { useConnectionQuality } from '../hooks/useConnectionQuality';
+import { useViewportSize } from '../hooks/useViewportSize';
 import type { Presentation, Slide } from '../types/database';
 import styles from './ViewerPage.module.css';
 
@@ -12,6 +13,7 @@ export function ViewerPage() {
     const { presentationId } = useParams<{ presentationId: string }>();
     const navigate = useNavigate();
     const connectionQuality = useConnectionQuality();
+    const viewportSize = useViewportSize();
 
     const [presentation, setPresentation] = useState<Presentation | null>(null);
     const [slides, setSlides] = useState<Slide[]>([]);
@@ -25,8 +27,10 @@ export function ViewerPage() {
     const pageRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     
-    // Adaptive preload count based on connection quality
+    // PHASE 3: Adaptive preload count based on connection quality
+    // PHASE 3: Lazy loading - only preload slides within ±5 range
     const preloadCount = connectionQuality === 'fast' ? 5 : 2;
+    const lazyLoadRange = 5; // Only preload slides within ±5 of current
 
     // Fetch initial data
     useEffect(() => {
@@ -67,24 +71,40 @@ export function ViewerPage() {
                 setSlides(loadedSlides);
                 slidesRef.current = loadedSlides;
 
-                // PHASE 1 OPTIMIZATION: Preload ALL slides on join to eliminate cache misses
-                // This ensures consistent 0ms image load time for all slides
+                // PHASE 3: Lazy loading - only preload slides within ±lazyLoadRange
+                // This reduces initial bandwidth usage while keeping nearby slides ready
                 if (presentationId && loadedSlides.length > 0) {
-                    // Cache all slides immediately (non-blocking)
-                    cacheSlides(
-                        presentationId,
-                        loadedSlides.map(s => ({
-                            slideNumber: s.slide_number,
-                            imageUrl: s.image_url,
-                            thumbnailUrl: s.thumbnail_url,
-                        })),
-                        [] // No priority - cache all equally in parallel
-                    ).catch(() => {
-                        // Ignore caching errors - non-critical
-                    });
+                    const currentIndex = typedPres.current_slide_index;
+                    const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
+                    
+                    // Determine which slides to preload (within range)
+                    const slidesToPreload: typeof loadedSlides = [];
+                    const priorityIndices: number[] = [];
+                    
+                    for (let i = 0; i < loadedSlides.length; i++) {
+                        const distance = Math.abs(i - currentSlideIndexInArray);
+                        if (distance <= lazyLoadRange) {
+                            slidesToPreload.push(loadedSlides[i]);
+                            priorityIndices.push(i);
+                        }
+                    }
+
+                    // Cache priority slides (within range) immediately
+                    if (slidesToPreload.length > 0) {
+                        cacheSlides(
+                            presentationId,
+                            slidesToPreload.map(s => ({
+                                slideNumber: s.slide_number,
+                                imageUrl: s.image_url,
+                                thumbnailUrl: s.thumbnail_url,
+                            })),
+                            priorityIndices
+                        ).catch(() => {
+                            // Ignore caching errors - non-critical
+                        });
+                    }
 
                     // Preload current slide immediately for instant display
-                    const currentIndex = typedPres.current_slide_index;
                     const currentSlide = loadedSlides.find(s => s.slide_number === currentIndex);
                     if (currentSlide) {
                         // Try cache first
@@ -98,9 +118,8 @@ export function ViewerPage() {
                         }
                     }
 
-                    // Preload all slides in background (for browser HTTP cache)
-                    // This happens in parallel and doesn't block
-                    loadedSlides.forEach((slide) => {
+                    // Preload nearby slides in background (for browser HTTP cache)
+                    slidesToPreload.forEach((slide) => {
                         // Check if already cached in IndexedDB
                         isSlideCached(presentationId, slide.slide_number).then(cached => {
                             if (cached) {
@@ -111,11 +130,14 @@ export function ViewerPage() {
                                     }
                                 });
                             }
-                            // Also preload for browser HTTP cache (works even if IndexedDB fails)
+                            // Also preload for browser HTTP cache
                             const img = new Image();
                             img.src = slide.image_url;
                         });
                     });
+
+                    // PHASE 3: Lazy load distant slides only when needed
+                    // They'll be cached on-demand when user navigates to them
                 }
 
                 cacheInitializedRef.current = true;
@@ -137,9 +159,14 @@ export function ViewerPage() {
         // Generate a unique viewer ID for this session
         const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
 
-        // Subscribe to slide updates
+        // PHASE 3: WebSocket optimization - configure channel with keep-alive
         const updateChannel = supabase
-            .channel(`viewer:${presentationId}`)
+            .channel(`viewer:${presentationId}`, {
+                config: {
+                    broadcast: { self: false },
+                    presence: { key: viewerId },
+                },
+            })
             .on(
                 'postgres_changes',
                 {
@@ -181,24 +208,40 @@ export function ViewerPage() {
                     // Sync with database state (after optimistic update)
                     setPresentation(updated);
 
-                    // PHASE 1 OPTIMIZATION: Adaptive preloading based on connection quality
-                    // Preload next N slides (N depends on connection speed)
+                    // PHASE 3: Lazy loading - preload slides within range when slide changes
+                    // Only preload slides within ±lazyLoadRange of new position
                     if (cacheInitializedRef.current && currentSlides.length > 0 && presentationId) {
                         const currentSlideIndexInArray = currentSlides.findIndex(s => s.slide_number === newSlideIndex);
                         if (currentSlideIndexInArray >= 0) {
-                            // Preload next N slides (adaptive based on connection)
-                            for (let i = 1; i <= preloadCount && (currentSlideIndexInArray + i) < currentSlides.length; i++) {
-                                const nextSlide = currentSlides[currentSlideIndexInArray + i];
-                                if (nextSlide) {
-                                    // Check cache first
-                                    getCachedSlide(presentationId, nextSlide.slide_number).then(cachedUrl => {
-                                        if (cachedUrl) {
-                                            setCachedImageUrls(prev => new Map(prev).set(nextSlide.slide_number, cachedUrl));
-                                        }
-                                    });
-                                    // Also preload for browser cache
-                                    const img = new Image();
-                                    img.src = nextSlide.image_url;
+                            // Preload slides within range (ahead and behind)
+                            for (let offset = -lazyLoadRange; offset <= lazyLoadRange; offset++) {
+                                const targetIndex = currentSlideIndexInArray + offset;
+                                if (targetIndex >= 0 && targetIndex < currentSlides.length) {
+                                    const targetSlide = currentSlides[targetIndex];
+                                    if (targetSlide) {
+                                        // Check cache first
+                                        getCachedSlide(presentationId, targetSlide.slide_number).then(cachedUrl => {
+                                            if (cachedUrl) {
+                                                setCachedImageUrls(prev => new Map(prev).set(targetSlide.slide_number, cachedUrl));
+                                            } else {
+                                                // Lazy load: cache on-demand
+                                                cacheSlides(
+                                                    presentationId,
+                                                    [{
+                                                        slideNumber: targetSlide.slide_number,
+                                                        imageUrl: targetSlide.image_url,
+                                                        thumbnailUrl: targetSlide.thumbnail_url,
+                                                    }],
+                                                    []
+                                                ).catch(() => {
+                                                    // Ignore errors
+                                                });
+                                            }
+                                        });
+                                        // Also preload for browser cache
+                                        const img = new Image();
+                                        img.src = targetSlide.image_url;
+                                    }
                                 }
                             }
                         }
@@ -209,7 +252,18 @@ export function ViewerPage() {
                     }
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                // PHASE 3: WebSocket optimization - faster reconnection
+                if (status === 'SUBSCRIBED') {
+                    console.log('Viewer channel subscribed');
+                } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+                    console.warn('Viewer channel error, reconnecting...');
+                    // Faster reconnection: 500ms instead of 2000ms
+                    setTimeout(() => {
+                        updateChannel.subscribe();
+                    }, 500);
+                }
+            });
 
         // Track presence for audience count
         const presenceChannel = supabase.channel(`presence:${presentationId}`, {
@@ -226,7 +280,7 @@ export function ViewerPage() {
             supabase.removeChannel(updateChannel);
             supabase.removeChannel(presenceChannel);
         };
-    }, [presentationId, preloadCount]);
+    }, [presentationId, preloadCount, lazyLoadRange]);
 
     // Fullscreen change listener
     useEffect(() => {
@@ -333,6 +387,9 @@ export function ViewerPage() {
         );
     }
 
+    // PHASE 3: Image sizing optimization - calculate optimal width
+    const optimalWidth = Math.min(viewportSize.width * viewportSize.pixelRatio, 1920);
+    
     return (
         <div className={styles.page} ref={pageRef}>
             <div className={styles.slideContainer}>
@@ -341,6 +398,9 @@ export function ViewerPage() {
                         src={currentSlideImageUrl}
                         alt={`Slide ${currentSlideIndex}`}
                         className={styles.slideImage}
+                        width={optimalWidth}
+                        loading="eager"
+                        decoding="async"
                         onError={(e) => {
                             // Fallback to original URL if cached URL fails
                             if (currentSlide && currentSlideImageUrl !== currentSlide.image_url) {

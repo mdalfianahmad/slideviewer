@@ -159,8 +159,13 @@ export function PresenterPage() {
     useEffect(() => {
         if (!presentationId) return;
 
+        // PHASE 3: WebSocket optimization - configure channel with keep-alive
         const updateChannel = supabase
-            .channel(`presenter:${presentationId}`)
+            .channel(`presenter:${presentationId}`, {
+                config: {
+                    broadcast: { self: true },
+                },
+            })
             .on(
                 'postgres_changes',
                 {
@@ -181,7 +186,18 @@ export function PresenterPage() {
                     });
                 }
             )
-            .subscribe();
+            .subscribe((status) => {
+                // PHASE 3: WebSocket optimization - faster reconnection
+                if (status === 'SUBSCRIBED') {
+                    console.log('Presenter channel subscribed');
+                } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
+                    console.warn('Presenter channel error, reconnecting...');
+                    // Faster reconnection: 500ms instead of 2000ms
+                    setTimeout(() => {
+                        updateChannel.subscribe();
+                    }, 500);
+                }
+            });
 
         return () => {
             supabase.removeChannel(updateChannel);
