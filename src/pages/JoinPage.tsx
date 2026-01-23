@@ -15,25 +15,34 @@ export function JoinPage() {
     const [inviteCode, setInviteCode] = useState(urlCode || '');
     const [error, setError] = useState('');
     const [isValidating, setIsValidating] = useState(false);
+    const [debugInfo, setDebugInfo] = useState<string>('');
 
     const handleJoin = useCallback(async (code?: string) => {
-        const codeToValidate = normalizeInviteCode(code || inviteCode);
+        const rawCode = code || inviteCode;
+        const codeToValidate = normalizeInviteCode(rawCode);
+
+        // Clear previous debug info
+        setDebugInfo('');
 
         if (!codeToValidate) {
             setError('Please enter an invite code');
+            setDebugInfo(`Raw code: "${rawCode}"`);
             return;
         }
 
         if (!isValidInviteCodeFormat(codeToValidate)) {
-            setError('Invalid code format. Enter 6 characters.');
+            setError(`Invalid code format. Enter 6 characters. (Got: "${codeToValidate}")`);
+            setDebugInfo(`Raw: "${rawCode}" → Normalized: "${codeToValidate}"`);
             return;
         }
 
         setIsValidating(true);
         setError('');
+        setDebugInfo(`Verifying code: ${codeToValidate}`);
 
         try {
-            console.log('Attempting to verify code:', codeToValidate);
+            // Check Supabase connection first
+            const { data: healthCheck } = await supabase.from('presentations').select('id').limit(1);
             
             // Lookup presentation by invite code
             // Code is normalized to uppercase to match database storage
@@ -43,58 +52,68 @@ export function JoinPage() {
                 .eq('invite_code', codeToValidate)
                 .maybeSingle();
 
-            console.log('Query result:', { 
-                hasData: !!presentation, 
-                hasError: !!fetchError,
-                error: fetchError 
-            });
-
             // Check for actual database errors
             if (fetchError) {
-                // Log detailed error for debugging
-                console.error('Database error when verifying code:', {
-                    inviteCode: codeToValidate,
-                    error: fetchError.message,
-                    details: fetchError.details,
-                    hint: fetchError.hint,
-                    errorCode: fetchError.code,
-                    fullError: fetchError,
-                });
+                const errorMsg = fetchError.message || 'Unknown error';
+                const errorCode = fetchError.code || 'NO_CODE';
                 
                 // PGRST116 is "not found" - treat as invalid code, not error
-                if (fetchError.code === 'PGRST116' || 
-                    fetchError.message?.toLowerCase().includes('no rows') ||
-                    fetchError.message?.toLowerCase().includes('not found')) {
+                if (errorCode === 'PGRST116' || 
+                    errorMsg.toLowerCase().includes('no rows') ||
+                    errorMsg.toLowerCase().includes('not found')) {
                     setError('Invalid invite code. Please check and try again.');
+                    setDebugInfo(`Code "${codeToValidate}" not found in database.`);
                     setIsValidating(false);
                     return;
                 }
                 
-                // Real database/network error
-                setError('Failed to verify code. Please check your connection and try again.');
+                // Network/connection errors
+                if (errorMsg.toLowerCase().includes('network') || 
+                    errorMsg.toLowerCase().includes('fetch') ||
+                    errorCode === 'PGRST301') {
+                    setError('Connection error. Please check your internet and try again.');
+                    setDebugInfo(`Network error: ${errorMsg}`);
+                    setIsValidating(false);
+                    return;
+                }
+                
+                // Real database/network error - show more details
+                setError(`Failed to verify code: ${errorMsg}`);
+                setDebugInfo(`Error code: ${errorCode}. Details: ${fetchError.details || 'None'}`);
                 setIsValidating(false);
                 return;
             }
 
             if (!presentation) {
                 setError('Invalid invite code. Please check and try again.');
+                setDebugInfo(`Code "${codeToValidate}" not found.`);
                 setIsValidating(false);
                 return;
             }
 
-            console.log('Code verified, navigating to presentation:', presentation.id);
+            // Success!
+            setDebugInfo('');
             const typedPresentation = presentation as Presentation;
             navigate(`/view/${typedPresentation.id}`);
         } catch (err) {
-            console.error('Join error (catch block):', err);
-            setError(err instanceof Error ? err.message : 'Failed to join presentation');
+            const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+            setError(`Failed to join: ${errorMessage}`);
+            setDebugInfo(`Exception: ${errorMessage}`);
             setIsValidating(false);
         }
     }, [inviteCode, navigate]);
 
     useEffect(() => {
-        if (urlCode && isValidInviteCodeFormat(urlCode)) {
-            handleJoin(urlCode);
+        if (urlCode) {
+            const normalized = normalizeInviteCode(urlCode);
+            setDebugInfo(`URL code: "${urlCode}" → Normalized: "${normalized}"`);
+            
+            if (isValidInviteCodeFormat(urlCode)) {
+                handleJoin(urlCode);
+            } else {
+                setError(`Invalid code format from URL: "${urlCode}"`);
+                setDebugInfo(`URL code "${urlCode}" failed format validation. Expected 6 characters.`);
+            }
         }
     }, [urlCode, handleJoin]);
 
@@ -148,6 +167,21 @@ export function JoinPage() {
                         Join
                     </Button>
                 </form>
+
+                {/* Debug info for mobile users */}
+                {debugInfo && (
+                    <div style={{ 
+                        marginTop: '1rem', 
+                        padding: '0.5rem', 
+                        fontSize: '0.75rem', 
+                        color: '#666',
+                        backgroundColor: '#f5f5f5',
+                        borderRadius: '4px',
+                        wordBreak: 'break-all'
+                    }}>
+                        Debug: {debugInfo}
+                    </div>
+                )}
 
                 <button className={styles.backLink} onClick={() => navigate('/')}>
                     ← Back to home
