@@ -140,10 +140,15 @@ export function ViewerPage() {
 
     // Subscribe to realtime updates and track presence
     useEffect(() => {
-        if (!presentationId) return;
+        console.log('🔧 ViewerPage useEffect - presentationId:', presentationId);
+        if (!presentationId) {
+            console.warn('⚠️ No presentationId, skipping subscription setup');
+            return;
+        }
 
         // Generate a unique viewer ID for this session
         const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
+        console.log('👤 Generated viewer ID:', viewerId);
 
         // Subscribe to slide updates
         console.log('🔌 Setting up realtime subscription for presentation:', presentationId);

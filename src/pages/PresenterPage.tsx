@@ -320,16 +320,24 @@ export function PresenterPage() {
     }, [presentationId, hasPresenterToken, slides]);
 
     const nextSlide = useCallback(() => {
-        if (slides.length === 0) return;
+        console.log('▶️ Next slide button clicked');
+        if (slides.length === 0) {
+            console.warn('⚠️ No slides available');
+            return;
+        }
         
         // Find current slide's position in the sorted array
         const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
         const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+        console.log('📍 Current slide index in array:', currentIndex, 'currentSlideIndex:', currentSlideIndex);
         
         // Get next slide
         if (currentIndex >= 0 && currentIndex < sortedSlides.length - 1) {
             const nextSlideNumber = sortedSlides[currentIndex + 1].slide_number;
+            console.log('➡️ Going to slide:', nextSlideNumber);
             goToSlide(nextSlideNumber);
+        } else {
+            console.warn('⚠️ Already at last slide');
         }
     }, [currentSlideIndex, slides, goToSlide]);
 
