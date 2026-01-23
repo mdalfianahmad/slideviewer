@@ -33,14 +33,25 @@ export function JoinPage() {
         setError('');
 
         try {
-            // Updated lookup to presentations table
+            // Lookup presentation by invite code
+            // Code is normalized to uppercase to match database storage
             const { data: presentation, error: fetchError } = await supabase
                 .from('presentations')
                 .select('*')
                 .eq('invite_code', codeToValidate)
                 .maybeSingle();
 
-            if (fetchError) throw new Error('Failed to verify code');
+            if (fetchError) {
+                // Log detailed error for debugging
+                console.error('Database error when verifying code:', {
+                    code: codeToValidate,
+                    error: fetchError.message,
+                    details: fetchError.details,
+                    hint: fetchError.hint,
+                    code: fetchError.code,
+                });
+                throw new Error('Failed to verify code. Please check your connection and try again.');
+            }
 
             if (!presentation) {
                 setError('Invalid invite code. Please check and try again.');
