@@ -180,6 +180,9 @@ export function ViewerPage() {
                     const newSlideIndex = updated.current_slide_index;
                     const currentSlides = slidesRef.current;
 
+                    // CRITICAL: Always update slide index first (ensures UI follows presenter)
+                    setCurrentSlideIndex(newSlideIndex);
+
                     // PHASE 1 OPTIMIZATION: Optimistic UI update
                     // Show slide immediately if cached, before waiting for database sync
                     if (cacheInitializedRef.current && currentSlides.length > 0 && presentationId) {
@@ -188,21 +191,14 @@ export function ViewerPage() {
                             // Try to get cached URL immediately (optimistic)
                             const cachedUrl = await getCachedSlide(presentationId, nextSlide.slide_number);
                             if (cachedUrl) {
-                                // OPTIMISTIC: Update UI immediately with cached image
-                                setCurrentSlideIndex(newSlideIndex);
+                                // OPTIMISTIC: Update cached URL for instant display
                                 setCachedImageUrls(prev => {
                                     const newMap = new Map(prev);
                                     newMap.set(nextSlide.slide_number, cachedUrl);
                                     return newMap;
                                 });
-                            } else {
-                                // Not cached yet, update index and use network URL
-                                setCurrentSlideIndex(newSlideIndex);
                             }
                         }
-                    } else {
-                        // Fallback: update index normally
-                        setCurrentSlideIndex(newSlideIndex);
                     }
 
                     // Sync with database state (after optimistic update)
