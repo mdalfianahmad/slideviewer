@@ -125,6 +125,35 @@ export function JoinPage() {
             <div className={styles.loading}>
                 <Spinner size="lg" />
                 <p>Joining presentation...</p>
+                {debugInfo && (
+                    <div style={{ 
+                        marginTop: '1rem',
+                        padding: '0.75rem', 
+                        fontSize: '0.75rem', 
+                        color: '#333',
+                        backgroundColor: '#fff3cd',
+                        borderRadius: '4px',
+                        wordBreak: 'break-all',
+                        fontFamily: 'monospace',
+                        border: '1px solid #ffc107',
+                        maxWidth: '90%'
+                    }}>
+                        <strong>Debug:</strong> {debugInfo}
+                    </div>
+                )}
+                {error && (
+                    <div style={{ 
+                        marginTop: '1rem',
+                        padding: '0.75rem',
+                        fontSize: '0.875rem',
+                        color: '#d32f2f',
+                        backgroundColor: '#ffebee',
+                        borderRadius: '4px',
+                        maxWidth: '90%'
+                    }}>
+                        <strong>Error:</strong> {error}
+                    </div>
+                )}
             </div>
         );
     }
@@ -166,50 +195,52 @@ export function JoinPage() {
                     </Button>
                 </form>
 
-                {/* Error message */}
-                {error && (
-                    <div style={{ 
-                        marginTop: '1rem',
-                        padding: '0.75rem',
-                        fontSize: '0.875rem',
-                        color: '#d32f2f',
-                        backgroundColor: '#ffebee',
-                        borderRadius: '4px',
-                        border: '1px solid #ffcdd2',
-                        wordBreak: 'break-word'
-                    }}>
-                        <strong>Error:</strong> {error}
-                    </div>
-                )}
+                {/* Always show error and debug info - make it very visible */}
+                <div style={{ marginTop: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {error && (
+                        <div style={{ 
+                            padding: '1rem',
+                            fontSize: '0.875rem',
+                            color: '#d32f2f',
+                            backgroundColor: '#ffebee',
+                            borderRadius: '4px',
+                            border: '2px solid #ffcdd2',
+                            wordBreak: 'break-word',
+                            fontWeight: 'bold'
+                        }}>
+                            ⚠️ <strong>Error:</strong> {error}
+                        </div>
+                    )}
 
-                {/* Debug info for mobile users - always show when there's debug info or error */}
-                {(debugInfo || error) && (
+                    {/* Debug info - ALWAYS SHOW with bright yellow background */}
                     <div style={{ 
-                        marginTop: '0.5rem', 
-                        padding: '0.75rem', 
-                        fontSize: '0.75rem', 
-                        color: '#666',
-                        backgroundColor: '#f5f5f5',
+                        padding: '1rem', 
+                        fontSize: '0.8rem', 
+                        color: '#000',
+                        backgroundColor: '#fff3cd',
                         borderRadius: '4px',
                         wordBreak: 'break-all',
                         fontFamily: 'monospace',
-                        border: '1px solid #e0e0e0'
+                        border: '2px solid #ffc107',
+                        minHeight: '80px',
+                        fontWeight: '500'
                     }}>
+                        <strong style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.9rem' }}>🔍 Debug Info:</strong>
                         {debugInfo ? (
-                            <>
-                                <strong>Debug Info:</strong><br />
-                                {debugInfo}
-                            </>
-                        ) : error ? (
-                            <>
-                                <strong>Debug:</strong> Error occurred but no debug info available.<br />
-                                URL Code: "{urlCode || 'none'}"<br />
-                                Normalized: "{normalizeInviteCode(urlCode || inviteCode)}"<br />
-                                Valid Format: {isValidInviteCodeFormat(urlCode || inviteCode) ? 'Yes' : 'No'}
-                            </>
-                        ) : null}
+                            <div style={{ whiteSpace: 'pre-wrap' }}>{debugInfo}</div>
+                        ) : (
+                            <div style={{ lineHeight: '1.6' }}>
+                                <div>📱 URL Code: "{urlCode || 'none'}"</div>
+                                <div>⌨️ Input Code: "{inviteCode || 'none'}"</div>
+                                <div>🔄 Normalized: "{normalizeInviteCode(urlCode || inviteCode)}"</div>
+                                <div>✅ Valid Format: {isValidInviteCodeFormat(urlCode || inviteCode) ? 'Yes' : 'No'}</div>
+                                <div>⏳ Is Validating: {isValidating ? 'Yes' : 'No'}</div>
+                                <div>❌ Has Error: {error ? 'Yes' : 'No'}</div>
+                                {error && <div>💬 Error Text: "{error}"</div>}
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
 
                 <button className={styles.backLink} onClick={() => navigate('/')}>
                     ← Back to home
