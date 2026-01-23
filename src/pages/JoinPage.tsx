@@ -44,11 +44,11 @@ export function JoinPage() {
             if (fetchError) {
                 // Log detailed error for debugging
                 console.error('Database error when verifying code:', {
-                    code: codeToValidate,
+                    inviteCode: codeToValidate,
                     error: fetchError.message,
                     details: fetchError.details,
                     hint: fetchError.hint,
-                    code: fetchError.code,
+                    errorCode: fetchError.code,
                 });
                 throw new Error('Failed to verify code. Please check your connection and try again.');
             }
