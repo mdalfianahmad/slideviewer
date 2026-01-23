@@ -1,6 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 // Use Vite's ?url suffix to get the path to the worker in node_modules
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.mjs?url';
+import { supportsWebP } from './image-compression';
 
 // Configure PDF.js worker
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
@@ -50,21 +51,35 @@ async function renderPageToBlob(
     }).promise;
 
     // Convert canvas to blob
+    // PHASE 2: Use WebP format for better compression (25-35% smaller)
     return new Promise((resolve, reject) => {
+        const format = supportsWebP() ? 'image/webp' : 'image/png';
+        const quality = supportsWebP() ? 0.85 : 0.92; // Lower quality for WebP (visually similar)
+        
         canvas.toBlob(
-            (blob) => {
+            async (blob) => {
                 if (blob) {
-                    resolve({
-                        blob,
-                        width: viewport.width,
-                        height: viewport.height,
-                    });
+                    // If WebP conversion failed, try PNG fallback
+                    if (format === 'image/webp' && blob.type === 'image/png') {
+                        // Browser doesn't support WebP, use PNG
+                        resolve({
+                            blob,
+                            width: viewport.width,
+                            height: viewport.height,
+                        });
+                    } else {
+                        resolve({
+                            blob,
+                            width: viewport.width,
+                            height: viewport.height,
+                        });
+                    }
                 } else {
                     reject(new Error('Failed to create blob from canvas'));
                 }
             },
-            'image/png',
-            0.92
+            format,
+            quality
         );
     });
 }

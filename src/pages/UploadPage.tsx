@@ -14,6 +14,7 @@ import {
     MAX_PDF_SIZE_BYTES,
     type PdfProcessingProgress,
 } from '../lib/pdf';
+import { compressImage, getWebPExtension } from '../lib/image-compression';
 import { generateInviteCode, getJoinUrl } from '../lib/invite-code';
 import { addRecentPresentation } from '../lib/storage';
 import { useAuth } from '../context/AuthContext';
@@ -180,6 +181,9 @@ export function UploadPage() {
             const totalSlides = slides.length;
             const failedSlides: number[] = [];
 
+            // PHASE 2: Use WebP extension for better compression
+            const imageExt = getWebPExtension();
+
             for (let i = 0; i < slides.length; i++) {
                 const slide = slides[i];
                 const progressPercent = 45 + (i / totalSlides) * 50; // 45-95%
@@ -190,12 +194,30 @@ export function UploadPage() {
                     message: `Uploading slide ${i + 1} of ${totalSlides}...`,
                 });
 
-                // Upload full image with retry
-                const imagePath = `${presentationId}/slides/${slide.slideNumber}.png`;
+                // PHASE 2: Compress images before upload (30-40% smaller)
+                let compressedImageBlob: Blob;
+                let compressedThumbnailBlob: Blob;
+                
+                try {
+                    // Compress full image (quality 0.85)
+                    compressedImageBlob = await compressImage(slide.imageBlob, false);
+                    // Compress thumbnail (quality 0.75, smaller size)
+                    compressedThumbnailBlob = await compressImage(slide.thumbnailBlob, true);
+                } catch (compressionError) {
+                    console.warn(`Compression failed for slide ${slide.slideNumber}, using original:`, compressionError);
+                    // Fallback to original blobs if compression fails
+                    compressedImageBlob = slide.imageBlob;
+                    compressedThumbnailBlob = slide.thumbnailBlob;
+                }
+
+                // Upload full image with retry (using WebP extension)
+                const imagePath = `${presentationId}/slides/${slide.slideNumber}.${imageExt}`;
                 const imageResult = await retryUpload(
                     () => supabase.storage
                         .from(SLIDES_BUCKET)
-                        .upload(imagePath, slide.imageBlob),
+                        .upload(imagePath, compressedImageBlob, {
+                            contentType: imageExt === 'webp' ? 'image/webp' : 'image/png',
+                        }),
                     3, // 3 retries
                     1000 // 1s, 2s, 4s delays
                 );
@@ -206,12 +228,14 @@ export function UploadPage() {
                     continue;
                 }
 
-                // Upload thumbnail with retry
-                const thumbnailPath = `${presentationId}/thumbnails/${slide.slideNumber}.png`;
+                // Upload thumbnail with retry (using WebP extension)
+                const thumbnailPath = `${presentationId}/thumbnails/${slide.slideNumber}.${imageExt}`;
                 const thumbResult = await retryUpload(
                     () => supabase.storage
                         .from(SLIDES_BUCKET)
-                        .upload(thumbnailPath, slide.thumbnailBlob),
+                        .upload(thumbnailPath, compressedThumbnailBlob, {
+                            contentType: imageExt === 'webp' ? 'image/webp' : 'image/png',
+                        }),
                     3, // 3 retries
                     1000 // 1s, 2s, 4s delays
                 );
