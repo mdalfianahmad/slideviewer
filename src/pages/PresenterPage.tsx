@@ -7,7 +7,7 @@ import { useAuth } from '../context/AuthContext';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import { QRCodeDisplay } from '../components/ui/QRCodeDisplay';
-import { cacheSlides, getCachedSlide } from '../lib/cache';
+import { cacheSlides } from '../lib/cache';
 import type { Presentation, Slide } from '../types/database';
 import styles from './PresenterPage.module.css';
 
@@ -105,17 +105,19 @@ export function PresenterPage() {
                 }
 
                 // Start caching with priority
-                cacheSlides(
-                    presentationId,
-                    loadedSlides.map(s => ({
-                        slideNumber: s.slide_number,
-                        imageUrl: s.image_url,
-                        thumbnailUrl: s.thumbnail_url,
-                    })),
-                    priorityIndices
-                ).catch(() => {
-                    // Ignore caching errors
-                });
+                if (presentationId) {
+                    cacheSlides(
+                        presentationId,
+                        loadedSlides.map(s => ({
+                            slideNumber: s.slide_number,
+                            imageUrl: s.image_url,
+                            thumbnailUrl: s.thumbnail_url,
+                        })),
+                        priorityIndices
+                    ).catch(() => {
+                        // Ignore caching errors
+                    });
+                }
 
                 // Preload priority slides immediately
                 priorityIndices.forEach(idx => {

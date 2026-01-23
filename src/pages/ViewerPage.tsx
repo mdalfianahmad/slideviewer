@@ -71,54 +71,56 @@ export function ViewerPage() {
                 }
 
                 // Start caching with priority
-                cacheSlides(
-                    presentationId,
-                    loadedSlides.map(s => ({
-                        slideNumber: s.slide_number,
-                        imageUrl: s.image_url,
-                        thumbnailUrl: s.thumbnail_url,
-                    })),
-                    priorityIndices
-                ).catch(() => {
-                    // Ignore caching errors
-                });
+                if (presentationId) {
+                    cacheSlides(
+                        presentationId,
+                        loadedSlides.map(s => ({
+                            slideNumber: s.slide_number,
+                            imageUrl: s.image_url,
+                            thumbnailUrl: s.thumbnail_url,
+                        })),
+                        priorityIndices
+                    ).catch(() => {
+                        // Ignore caching errors
+                    });
 
-                // Preload priority slides immediately (for instant display)
-                const priorityPromises = priorityIndices.map(async (idx) => {
-                    const slide = loadedSlides[idx];
-                    if (!slide) return;
+                    // Preload priority slides immediately (for instant display)
+                    const priorityPromises = priorityIndices.map(async (idx) => {
+                        const slide = loadedSlides[idx];
+                        if (!slide) return;
 
-                    // Try cache first, then fallback to network
-                    const cachedUrl = await getCachedSlide(presentationId, slide.slide_number);
-                    if (cachedUrl) {
-                        setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
-                    }
+                        // Try cache first, then fallback to network
+                        const cachedUrl = await getCachedSlide(presentationId, slide.slide_number);
+                        if (cachedUrl) {
+                            setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
+                        }
 
-                    // Also preload via Image for browser cache
-                    const img = new Image();
-                    img.src = slide.image_url;
-                });
+                        // Also preload via Image for browser cache
+                        const img = new Image();
+                        img.src = slide.image_url;
+                    });
 
-                await Promise.all(priorityPromises);
+                    await Promise.all(priorityPromises);
 
-                // Preload remaining slides in background
-                loadedSlides.forEach((slide, idx) => {
-                    if (!priorityIndices.includes(idx)) {
-                        // Check cache first
-                        isSlideCached(presentationId, slide.slide_number).then(cached => {
-                            if (cached) {
-                                getCachedSlide(presentationId, slide.slide_number).then(url => {
-                                    if (url) {
-                                        setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, url));
-                                    }
-                                });
-                            }
-                            // Also preload for browser cache
-                            const img = new Image();
-                            img.src = slide.image_url;
-                        });
-                    }
-                });
+                    // Preload remaining slides in background
+                    loadedSlides.forEach((slide, idx) => {
+                        if (!priorityIndices.includes(idx)) {
+                            // Check cache first
+                            isSlideCached(presentationId, slide.slide_number).then(cached => {
+                                if (cached) {
+                                    getCachedSlide(presentationId, slide.slide_number).then(url => {
+                                        if (url) {
+                                            setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, url));
+                                        }
+                                    });
+                                }
+                                // Also preload for browser cache
+                                const img = new Image();
+                                img.src = slide.image_url;
+                            });
+                        }
+                    });
+                }
 
                 cacheInitializedRef.current = true;
                 setIsLoading(false);
@@ -157,7 +159,7 @@ export function ViewerPage() {
                     setCurrentSlideIndex(newSlideIndex);
 
                     // Preload next slides when slide changes
-                    if (cacheInitializedRef.current && slidesRef.current.length > 0) {
+                    if (cacheInitializedRef.current && slidesRef.current.length > 0 && presentationId) {
                         const currentSlides = slidesRef.current;
                         const currentSlideIndexInArray = currentSlides.findIndex(s => s.slide_number === newSlideIndex);
                         if (currentSlideIndexInArray >= 0) {
