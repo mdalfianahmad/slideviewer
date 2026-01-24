@@ -34,6 +34,12 @@ export function ViewerPage() {
     const reconnectAttemptsRef = useRef(0);
     const pollingIntervalRef = useRef<number | null>(null);
     const connectionTimeoutRef = useRef<number | null>(null);
+    const presentationIdRef = useRef(presentationId);
+    
+    // Keep ref in sync
+    useEffect(() => {
+        presentationIdRef.current = presentationId;
+    }, [presentationId]);
 
     // Fetch initial data
     useEffect(() => {
@@ -137,18 +143,23 @@ export function ViewerPage() {
 
     // Polling fallback function - used when WebSocket fails
     const startPolling = useCallback(() => {
-        if (pollingIntervalRef.current) return; // Already polling
+        if (pollingIntervalRef.current) {
+            console.log('[Viewer] Already polling, skipping');
+            return;
+        }
         
         console.log('[Viewer] Starting polling fallback (WebSocket unavailable)');
+        // Force update status synchronously
         setConnectionStatus('polling');
         
         const poll = async () => {
-            if (!presentationId) return;
+            const pid = presentationIdRef.current;
+            if (!pid) return;
             try {
                 const { data, error } = await supabase
                     .from('presentations')
                     .select('current_slide_index, is_live')
-                    .eq('id', presentationId)
+                    .eq('id', pid)
                     .single();
                 
                 if (!error && data) {
@@ -167,10 +178,10 @@ export function ViewerPage() {
             }
         };
         
-        // Poll every 1.5 seconds
-        pollingIntervalRef.current = window.setInterval(poll, 1500);
+        // Poll every 1 second for better responsiveness
+        pollingIntervalRef.current = window.setInterval(poll, 1000);
         poll(); // Initial poll
-    }, [presentationId]);
+    }, []); // No dependencies - uses refs
 
     const stopPolling = useCallback(() => {
         if (pollingIntervalRef.current) {
@@ -178,6 +189,56 @@ export function ViewerPage() {
             pollingIntervalRef.current = null;
             console.log('[Viewer] Stopped polling');
         }
+    }, []);
+    
+    // Force refresh - clears all caches and reloads
+    const forceRefresh = useCallback(async () => {
+        console.log('[Viewer] Force refresh - clearing all caches');
+        try {
+            // Clear service worker caches
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                console.log('[Viewer] Cleared all caches');
+            }
+            
+            // Unregister service workers
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(registrations.map(r => r.unregister()));
+                console.log('[Viewer] Unregistered service workers');
+            }
+            
+            // Clear localStorage for this site
+            localStorage.clear();
+            sessionStorage.clear();
+            
+            // Hard reload
+            window.location.reload();
+        } catch (e) {
+            console.error('[Viewer] Force refresh error:', e);
+            window.location.reload();
+        }
+    }, []);
+    
+    // Clear old API caches on mount (but keep slide images)
+    useEffect(() => {
+        const clearOldCache = async () => {
+            if ('caches' in window) {
+                try {
+                    const cacheNames = await caches.keys();
+                    // Only clear API caches, not slide images
+                    const apiCaches = cacheNames.filter(name => 
+                        name.includes('api') || name.includes('workbox')
+                    );
+                    await Promise.all(apiCaches.map(name => caches.delete(name)));
+                    console.log('[Viewer] Cleared API caches');
+                } catch (e) {
+                    console.warn('[Viewer] Failed to clear caches:', e);
+                }
+            }
+        };
+        clearOldCache();
     }, []);
 
     // Subscribe to realtime updates and track presence
@@ -299,7 +360,8 @@ export function ViewerPage() {
             supabase.removeChannel(updateChannel);
             supabase.removeChannel(presenceChannel);
         };
-    }, [presentationId, lazyLoadRange, startPolling, stopPolling]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [presentationId]); // Only re-run when presentationId changes
 
     // Fullscreen change listener
     useEffect(() => {
@@ -469,13 +531,13 @@ export function ViewerPage() {
                     className={`${styles.connectionStatus} ${styles[connectionStatus]}`}
                     title={
                         connectionStatus === 'connected' ? 'Connected - receiving live updates' :
-                        connectionStatus === 'connecting' ? 'Connecting to live updates...' :
-                        connectionStatus === 'polling' ? 'Using backup mode - updates every 1.5s' :
-                        'Disconnected - tap to retry'
+                        connectionStatus === 'connecting' ? 'Connecting... (tap to force refresh)' :
+                        connectionStatus === 'polling' ? 'Backup mode - updates every 1s' :
+                        'Disconnected - tap to force refresh'
                     }
                     onClick={() => {
-                        if (connectionStatus !== 'connected' && connectionStatus !== 'polling') {
-                            window.location.reload();
+                        if (connectionStatus !== 'connected') {
+                            forceRefresh();
                         }
                     }}
                 >
@@ -484,7 +546,7 @@ export function ViewerPage() {
                         <span className={styles.statusText}>
                             {connectionStatus === 'connecting' ? 'Connecting...' : 
                              connectionStatus === 'polling' ? 'Backup mode' : 
-                             'Tap to reconnect'}
+                             'Tap to refresh'}
                         </span>
                     )}
                 </div>
