@@ -534,6 +534,13 @@ export function PresenterPage() {
                                 <img
                                     src={slide.thumbnail_url || slide.image_url}
                                     alt={`Slide ${slide.slide_number}`}
+                                    loading="lazy"
+                                    onError={(e) => {
+                                        // Fallback to full image if thumbnail fails
+                                        if (slide.thumbnail_url && (e.target as HTMLImageElement).src !== slide.image_url) {
+                                            (e.target as HTMLImageElement).src = slide.image_url;
+                                        }
+                                    }}
                                 />
                                 <span className={styles.overviewNumber}>{slide.slide_number}</span>
                             </button>
