@@ -321,12 +321,12 @@
     cursor: pointer;
     transition: all var(--transition-fast);
     overflow: hidden;
+    aspect-ratio: 16/9; /* Enforce aspect ratio on container */
 }
 
 .overviewSlide img {
     width: 100%;
     height: 100%;
-    aspect-ratio: 16/9;
     object-fit: cover;
     display: block;
     background-color: var(--color-gray-700);
