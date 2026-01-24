@@ -31,15 +31,39 @@ export function ViewerPage() {
     const pageRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'polling'>('connecting');
+    const [showReconnectHint, setShowReconnectHint] = useState(false);
     const reconnectAttemptsRef = useRef(0);
     const pollingIntervalRef = useRef<number | null>(null);
     const connectionTimeoutRef = useRef<number | null>(null);
+    const reconnectHintTimeoutRef = useRef<number | null>(null);
     const presentationIdRef = useRef(presentationId);
     
     // Keep ref in sync
     useEffect(() => {
         presentationIdRef.current = presentationId;
     }, [presentationId]);
+
+    // Show reconnect hint after 2 seconds of "connecting"
+    useEffect(() => {
+        if (connectionStatus === 'connecting') {
+            reconnectHintTimeoutRef.current = window.setTimeout(() => {
+                setShowReconnectHint(true);
+            }, 2000);
+        } else {
+            // Hide hint when status changes
+            setShowReconnectHint(false);
+            if (reconnectHintTimeoutRef.current) {
+                clearTimeout(reconnectHintTimeoutRef.current);
+                reconnectHintTimeoutRef.current = null;
+            }
+        }
+        
+        return () => {
+            if (reconnectHintTimeoutRef.current) {
+                clearTimeout(reconnectHintTimeoutRef.current);
+            }
+        };
+    }, [connectionStatus]);
 
     // Fetch initial data
     useEffect(() => {
@@ -528,7 +552,7 @@ export function ViewerPage() {
                 
                 {/* Connection status indicator */}
                 <div 
-                    className={`${styles.connectionStatus} ${styles[connectionStatus]}`}
+                    className={`${styles.connectionStatus} ${styles[connectionStatus]} ${showReconnectHint ? styles.withHint : ''}`}
                     title={
                         connectionStatus === 'connected' ? 'Connected - receiving live updates' :
                         connectionStatus === 'connecting' ? 'Connecting... (tap to force refresh)' :
@@ -548,6 +572,9 @@ export function ViewerPage() {
                              connectionStatus === 'polling' ? 'Backup mode' : 
                              'Tap to refresh'}
                         </span>
+                    )}
+                    {showReconnectHint && connectionStatus === 'connecting' && (
+                        <span className={styles.reconnectHint}>Tap here to reconnect</span>
                     )}
                 </div>
 

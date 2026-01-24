@@ -203,6 +203,24 @@
     50% { opacity: 0.5; transform: scale(0.8); }
 }
 
+/* Reconnect hint tooltip */
+.connectionStatus.withHint {
+    flex-direction: column;
+    padding: 8px 14px;
+}
+
+.reconnectHint {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.7);
+    margin-top: 2px;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* Mobile adjustments */
 @media (max-width: 640px) {
     .slideContainer {
