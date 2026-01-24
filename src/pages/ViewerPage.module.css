@@ -193,6 +193,11 @@
     animation: pulse 0.5s ease-in-out infinite;
 }
 
+.connectionStatus.polling .statusDot {
+    background-color: #3b82f6;
+    animation: pulse 1.5s ease-in-out infinite;
+}
+
 @keyframes pulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.5; transform: scale(0.8); }

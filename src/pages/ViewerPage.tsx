@@ -30,8 +30,10 @@ export function ViewerPage() {
     const slidesRef = useRef<Slide[]>([]);
     const pageRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
-    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'polling'>('connecting');
     const reconnectAttemptsRef = useRef(0);
+    const pollingIntervalRef = useRef<number | null>(null);
+    const connectionTimeoutRef = useRef<number | null>(null);
 
     // Fetch initial data
     useEffect(() => {
@@ -133,12 +135,63 @@ export function ViewerPage() {
         fetchData();
     }, [presentationId, lazyLoadRange]);
 
+    // Polling fallback function - used when WebSocket fails
+    const startPolling = useCallback(() => {
+        if (pollingIntervalRef.current) return; // Already polling
+        
+        console.log('[Viewer] Starting polling fallback (WebSocket unavailable)');
+        setConnectionStatus('polling');
+        
+        const poll = async () => {
+            if (!presentationId) return;
+            try {
+                const { data, error } = await supabase
+                    .from('presentations')
+                    .select('current_slide_index, is_live')
+                    .eq('id', presentationId)
+                    .single();
+                
+                if (!error && data) {
+                    setCurrentSlideIndex(prev => {
+                        if (prev !== data.current_slide_index) {
+                            console.log('[Viewer] Poll: slide changed to', data.current_slide_index);
+                        }
+                        return data.current_slide_index;
+                    });
+                    if (!data.is_live) {
+                        setHasEnded(true);
+                    }
+                }
+            } catch (e) {
+                console.error('[Viewer] Poll error:', e);
+            }
+        };
+        
+        // Poll every 1.5 seconds
+        pollingIntervalRef.current = window.setInterval(poll, 1500);
+        poll(); // Initial poll
+    }, [presentationId]);
+
+    const stopPolling = useCallback(() => {
+        if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+            console.log('[Viewer] Stopped polling');
+        }
+    }, []);
+
     // Subscribe to realtime updates and track presence
     useEffect(() => {
         if (!presentationId) return;
 
         // Generate a unique viewer ID for this session
         const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
+
+        // Set a timeout - if not connected within 5 seconds, fall back to polling
+        connectionTimeoutRef.current = window.setTimeout(() => {
+            console.log('[Viewer] Connection timeout - falling back to polling');
+            startPolling();
+        }, 5000);
 
         // PHASE 3: Subscribe to slide updates with WebSocket optimization
         const updateChannel = supabase
@@ -196,18 +249,31 @@ export function ViewerPage() {
             .subscribe((status) => {
                 console.log('[Viewer] Realtime status:', status);
                 if (status === 'SUBSCRIBED') {
+                    // Clear timeout and stop polling - we're connected!
+                    if (connectionTimeoutRef.current) {
+                        clearTimeout(connectionTimeoutRef.current);
+                        connectionTimeoutRef.current = null;
+                    }
+                    stopPolling();
                     setConnectionStatus('connected');
                     reconnectAttemptsRef.current = 0;
                 } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
                     setConnectionStatus('disconnected');
                     reconnectAttemptsRef.current += 1;
-                    // Exponential backoff: 500ms, 1s, 2s, 4s, max 10s
-                    const delay = Math.min(500 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000);
-                    console.log(`[Viewer] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`);
-                    setTimeout(() => {
-                        setConnectionStatus('connecting');
-                        updateChannel.subscribe();
-                    }, delay);
+                    
+                    // After 3 failed attempts, switch to polling
+                    if (reconnectAttemptsRef.current >= 3) {
+                        console.log('[Viewer] Too many reconnection attempts, switching to polling');
+                        startPolling();
+                    } else {
+                        // Exponential backoff: 500ms, 1s, 2s
+                        const delay = Math.min(500 * Math.pow(2, reconnectAttemptsRef.current - 1), 2000);
+                        console.log(`[Viewer] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`);
+                        setTimeout(() => {
+                            setConnectionStatus('connecting');
+                            updateChannel.subscribe();
+                        }, delay);
+                    }
                 }
             });
 
@@ -226,10 +292,14 @@ export function ViewerPage() {
         });
 
         return () => {
+            if (connectionTimeoutRef.current) {
+                clearTimeout(connectionTimeoutRef.current);
+            }
+            stopPolling();
             supabase.removeChannel(updateChannel);
             supabase.removeChannel(presenceChannel);
         };
-    }, [presentationId, lazyLoadRange]);
+    }, [presentationId, lazyLoadRange, startPolling, stopPolling]);
 
     // Fullscreen change listener
     useEffect(() => {
@@ -398,13 +468,13 @@ export function ViewerPage() {
                 <div 
                     className={`${styles.connectionStatus} ${styles[connectionStatus]}`}
                     title={
-                        connectionStatus === 'connected' ? 'Connected - receiving updates' :
-                        connectionStatus === 'connecting' ? 'Connecting...' :
-                        connectionStatus === 'disconnected' ? 'Disconnected - tap to retry' :
-                        'Connection error - tap to retry'
+                        connectionStatus === 'connected' ? 'Connected - receiving live updates' :
+                        connectionStatus === 'connecting' ? 'Connecting to live updates...' :
+                        connectionStatus === 'polling' ? 'Using backup mode - updates every 1.5s' :
+                        'Disconnected - tap to retry'
                     }
                     onClick={() => {
-                        if (connectionStatus !== 'connected') {
+                        if (connectionStatus !== 'connected' && connectionStatus !== 'polling') {
                             window.location.reload();
                         }
                     }}
@@ -412,7 +482,9 @@ export function ViewerPage() {
                     <span className={styles.statusDot} />
                     {connectionStatus !== 'connected' && (
                         <span className={styles.statusText}>
-                            {connectionStatus === 'connecting' ? 'Connecting...' : 'Tap to reconnect'}
+                            {connectionStatus === 'connecting' ? 'Connecting...' : 
+                             connectionStatus === 'polling' ? 'Backup mode' : 
+                             'Tap to reconnect'}
                         </span>
                     )}
                 </div>
