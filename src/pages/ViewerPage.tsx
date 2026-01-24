@@ -30,6 +30,8 @@ export function ViewerPage() {
     const slidesRef = useRef<Slide[]>([]);
     const pageRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
+    const reconnectAttemptsRef = useRef(0);
 
     // Fetch initial data
     useEffect(() => {
@@ -192,13 +194,20 @@ export function ViewerPage() {
                 }
             )
             .subscribe((status) => {
+                console.log('[Viewer] Realtime status:', status);
                 if (status === 'SUBSCRIBED') {
-                    // Successfully subscribed
+                    setConnectionStatus('connected');
+                    reconnectAttemptsRef.current = 0;
                 } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
-                    // PHASE 3: Faster reconnection on error/close/timeout
+                    setConnectionStatus('disconnected');
+                    reconnectAttemptsRef.current += 1;
+                    // Exponential backoff: 500ms, 1s, 2s, 4s, max 10s
+                    const delay = Math.min(500 * Math.pow(2, reconnectAttemptsRef.current - 1), 10000);
+                    console.log(`[Viewer] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`);
                     setTimeout(() => {
+                        setConnectionStatus('connecting');
                         updateChannel.subscribe();
-                    }, 500);
+                    }, delay);
                 }
             });
 
@@ -240,6 +249,35 @@ export function ViewerPage() {
             document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
         };
     }, []);
+
+    // Handle tab visibility changes - refetch current slide when tab becomes visible
+    // This fixes issues on mobile where WebSocket connections are suspended
+    useEffect(() => {
+        const handleVisibilityChange = async () => {
+            if (document.visibilityState === 'visible' && presentationId) {
+                console.log('[Viewer] Tab became visible, checking for updates...');
+                // Refetch current presentation state
+                const { data, error } = await supabase
+                    .from('presentations')
+                    .select('current_slide_index, is_live')
+                    .eq('id', presentationId)
+                    .single();
+                
+                if (!error && data) {
+                    console.log('[Viewer] Fetched current slide:', data.current_slide_index);
+                    setCurrentSlideIndex(data.current_slide_index);
+                    if (!data.is_live) {
+                        setHasEnded(true);
+                    }
+                }
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
+    }, [presentationId]);
 
     const toggleFullscreen = useCallback(async () => {
         try {
@@ -355,6 +393,30 @@ export function ViewerPage() {
                 <div className={styles.slideCounter}>
                     {currentSlideIndex} / {slides.length}
                 </div>
+                
+                {/* Connection status indicator */}
+                <div 
+                    className={`${styles.connectionStatus} ${styles[connectionStatus]}`}
+                    title={
+                        connectionStatus === 'connected' ? 'Connected - receiving updates' :
+                        connectionStatus === 'connecting' ? 'Connecting...' :
+                        connectionStatus === 'disconnected' ? 'Disconnected - tap to retry' :
+                        'Connection error - tap to retry'
+                    }
+                    onClick={() => {
+                        if (connectionStatus !== 'connected') {
+                            window.location.reload();
+                        }
+                    }}
+                >
+                    <span className={styles.statusDot} />
+                    {connectionStatus !== 'connected' && (
+                        <span className={styles.statusText}>
+                            {connectionStatus === 'connecting' ? 'Connecting...' : 'Tap to reconnect'}
+                        </span>
+                    )}
+                </div>
+
                 <button
                     className={styles.fullscreenButton}
                     onClick={toggleFullscreen}

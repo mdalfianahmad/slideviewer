@@ -137,25 +137,65 @@
     color: var(--color-white);
 }
 
-.connectionIndicator {
+/* Connection status indicator */
+.connectionStatus {
     position: absolute;
     top: var(--spacing-4);
-    right: var(--spacing-4);
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(4px);
+    pointer-events: auto;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.connectionDot {
-    display: block;
-    width: 8px;
-    height: 8px;
+.connectionStatus:hover {
+    background: rgba(0, 0, 0, 0.8);
+}
+
+.statusDot {
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
+    flex-shrink: 0;
 }
 
-.connected {
+.statusText {
+    font-size: var(--font-size-xs);
+    color: rgba(255, 255, 255, 0.9);
+    white-space: nowrap;
+}
+
+/* Connection states */
+.connectionStatus.connected {
+    padding: 6px 10px;
+}
+
+.connectionStatus.connected .statusDot {
     background-color: #22c55e;
+    box-shadow: 0 0 8px #22c55e;
 }
 
-.disconnected {
-    background-color: var(--color-error);
+.connectionStatus.connecting .statusDot {
+    background-color: #f59e0b;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+.connectionStatus.disconnected .statusDot,
+.connectionStatus.error .statusDot {
+    background-color: #ef4444;
+    animation: pulse 0.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.8); }
 }
 
 /* Mobile adjustments */
