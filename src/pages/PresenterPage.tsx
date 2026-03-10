@@ -376,11 +376,15 @@ export function PresenterPage() {
             if (e.target instanceof HTMLInputElement) return;
             switch (e.key) {
                 case 'ArrowRight':
+                case 'ArrowDown':
+                case 'PageDown':
                 case ' ':
                     e.preventDefault();
                     nextSlide();
                     break;
                 case 'ArrowLeft':
+                case 'ArrowUp':
+                case 'PageUp':
                     e.preventDefault();
                     prevSlide();
                     break;
