@@ -3,10 +3,22 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
-import { cacheSlides, getCachedSlide } from '../lib/cache';
+import { preloadAround, useReadyImage } from '../lib/imagePreloader';
+import {
+    ENDED_EVENT,
+    SLIDE_EVENT,
+    SYNC_REQUEST_EVENT,
+    createSeqGate,
+    slideSyncTopic,
+    type SlideMessage,
+} from '../lib/slideSync';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { useConnectionQuality } from '../hooks/useConnectionQuality';
 import type { Presentation, Slide } from '../types/database';
+
+// After a broadcast, ignore database-sourced slide values for this long.
+// DB updates arrive later than broadcasts and can be stale.
+const BROADCAST_PRIORITY_MS = 3000;
 import styles from './ViewerPage.module.css';
 
 export function ViewerPage() {
@@ -25,9 +37,8 @@ export function ViewerPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [hasEnded, setHasEnded] = useState(false);
-    const [cachedImageUrls, setCachedImageUrls] = useState<Map<number, string>>(new Map());
-    const cacheInitializedRef = useRef(false);
-    const slidesRef = useRef<Slide[]>([]);
+    const seqGateRef = useRef(createSeqGate());
+    const lastBroadcastAtRef = useRef(0);
     const pageRef = useRef<HTMLDivElement>(null);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'polling'>('connecting');
@@ -42,6 +53,13 @@ export function ViewerPage() {
     useEffect(() => {
         presentationIdRef.current = presentationId;
     }, [presentationId]);
+
+    // Apply a slide index read from the database (initial load, polling,
+    // postgres_changes, tab refocus) unless a fresher broadcast arrived recently.
+    const applyDbSlide = useCallback((slideIndex: number) => {
+        if (Date.now() - lastBroadcastAtRef.current < BROADCAST_PRIORITY_MS) return;
+        setCurrentSlideIndex(slideIndex);
+    }, []);
 
     // Show reconnect hint after 2 seconds of "connecting"
     useEffect(() => {
@@ -85,7 +103,7 @@ export function ViewerPage() {
 
                 const typedPres = pres as Presentation;
                 setPresentation(typedPres);
-                setCurrentSlideIndex(typedPres.current_slide_index);
+                applyDbSlide(typedPres.current_slide_index);
 
                 // Check if already ended
                 if (!typedPres.is_live) {
@@ -102,58 +120,8 @@ export function ViewerPage() {
 
                 const loadedSlides = (slideData as Slide[]) || [];
                 setSlides(loadedSlides);
-                slidesRef.current = loadedSlides;
+                // Images are preloaded in a window around the current slide (see effect below).
 
-                    // PHASE 3: Lazy loading - only cache slides within range
-                    if (presentationId && loadedSlides.length > 0) {
-                        const currentIndex = typedPres.current_slide_index;
-                        const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
-                        
-                        // Calculate lazy load range: current slide ± lazyLoadRange
-                        const priorityIndices: number[] = [];
-                        const startIdx = Math.max(0, currentSlideIndexInArray - lazyLoadRange);
-                        const endIdx = Math.min(loadedSlides.length - 1, currentSlideIndexInArray + lazyLoadRange);
-                        
-                        for (let i = startIdx; i <= endIdx; i++) {
-                            priorityIndices.push(i);
-                        }
-
-                        // Start caching with priority
-                        cacheSlides(
-                            presentationId,
-                            loadedSlides.map(s => ({
-                                slideNumber: s.slide_number,
-                                imageUrl: s.image_url,
-                                thumbnailUrl: s.thumbnail_url,
-                            })),
-                            priorityIndices
-                        ).catch(() => {
-                            // Ignore caching errors - non-critical
-                        });
-
-                        // Preload priority slides immediately (for instant display)
-                        const priorityPromises = priorityIndices.map(async (idx) => {
-                            const slide = loadedSlides[idx];
-                            if (!slide) return;
-
-                            // Try cache first, then fallback to network
-                            const cachedUrl = await getCachedSlide(presentationId, slide.slide_number);
-                            if (cachedUrl) {
-                                setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
-                            }
-
-                            // Also preload via Image for browser cache
-                    const img = new Image();
-                    img.src = slide.image_url;
-                });
-
-                        await Promise.all(priorityPromises);
-
-                        // PHASE 3: Don't preload distant slides - only load when needed
-                        // This saves 40-50% bandwidth on large presentations
-                    }
-
-                cacheInitializedRef.current = true;
                 setIsLoading(false);
             } catch (err) {
                 console.error('Viewer fetch error:', err);
@@ -163,7 +131,16 @@ export function ViewerPage() {
         }
 
         fetchData();
-    }, [presentationId, lazyLoadRange]);
+    }, [presentationId, applyDbSlide]);
+
+    // Preload current slide ± lazyLoadRange (forward-biased: the deck moves forward)
+    const currentPosition = slides.findIndex(s => s.slide_number === currentSlideIndex);
+    useEffect(() => {
+        preloadAround(slides, currentPosition, s => [s.image_url], {
+            ahead: lazyLoadRange,
+            behind: 1,
+        });
+    }, [slides, currentPosition, lazyLoadRange]);
 
     // Polling fallback function - used when WebSocket fails
     const startPolling = useCallback(() => {
@@ -187,12 +164,7 @@ export function ViewerPage() {
                     .single();
                 
                 if (!error && data) {
-                    setCurrentSlideIndex(prev => {
-                        if (prev !== data.current_slide_index) {
-                            console.log('[Viewer] Poll: slide changed to', data.current_slide_index);
-                        }
-                        return data.current_slide_index;
-                    });
+                    applyDbSlide(data.current_slide_index);
                     if (!data.is_live) {
                         setHasEnded(true);
                     }
@@ -205,7 +177,7 @@ export function ViewerPage() {
         // Poll every 1 second for better responsiveness
         pollingIntervalRef.current = window.setInterval(poll, 1000);
         poll(); // Initial poll
-    }, []); // No dependencies - uses refs
+    }, [applyDbSlide]); // Stable - uses refs
 
     const stopPolling = useCallback(() => {
         if (pollingIntervalRef.current) {
@@ -278,13 +250,23 @@ export function ViewerPage() {
             startPolling();
         }, 5000);
 
-        // PHASE 3: Subscribe to slide updates with WebSocket optimization
+        // Slide sync channel: broadcast is the fast path; postgres_changes is kept
+        // as a backup (and for is_live) in case a broadcast is missed.
         const updateChannel = supabase
-            .channel(`viewer:${presentationId}`, {
+            .channel(slideSyncTopic(presentationId), {
                 config: {
                     broadcast: { self: false },
-                    presence: { key: viewerId }
                 }
+            })
+            .on('broadcast', { event: SLIDE_EVENT }, ({ payload }) => {
+                const msg = payload as SlideMessage;
+                if (seqGateRef.current.accept(msg.seq)) {
+                    lastBroadcastAtRef.current = Date.now();
+                    setCurrentSlideIndex(msg.slide);
+                }
+            })
+            .on('broadcast', { event: ENDED_EVENT }, () => {
+                setHasEnded(true);
             })
             .on(
                 'postgres_changes',
@@ -294,38 +276,10 @@ export function ViewerPage() {
                     table: 'presentations',
                     filter: `id=eq.${presentationId}`,
                 },
-                async (payload) => {
+                (payload) => {
                     const updated = payload.new as Presentation;
                     setPresentation(updated);
-                    const newSlideIndex = updated.current_slide_index;
-                    setCurrentSlideIndex(newSlideIndex);
-
-                    // PHASE 3: Lazy loading - preload slides within range when slide changes
-                    if (cacheInitializedRef.current && slidesRef.current.length > 0 && presentationId) {
-                        const currentSlides = slidesRef.current;
-                        const currentSlideIndexInArray = currentSlides.findIndex(s => s.slide_number === newSlideIndex);
-                        if (currentSlideIndexInArray >= 0) {
-                            // Preload slides within lazyLoadRange
-                            const startIdx = Math.max(0, currentSlideIndexInArray - lazyLoadRange);
-                            const endIdx = Math.min(currentSlides.length - 1, currentSlideIndexInArray + lazyLoadRange);
-                            
-                            for (let i = startIdx; i <= endIdx; i++) {
-                                const slide = currentSlides[i];
-                                if (slide && slide.slide_number !== newSlideIndex) {
-                                    // Check cache first
-                                    getCachedSlide(presentationId, slide.slide_number).then(cachedUrl => {
-                                        if (cachedUrl) {
-                                            setCachedImageUrls(prev => new Map(prev).set(slide.slide_number, cachedUrl));
-                                        }
-                                    });
-                                    // Also preload for browser cache
-                                    const img = new Image();
-                                    img.src = slide.image_url;
-                                }
-                            }
-                        }
-                    }
-
+                    applyDbSlide(updated.current_slide_index);
                     if (!updated.is_live) {
                         setHasEnded(true);
                     }
@@ -342,22 +296,18 @@ export function ViewerPage() {
                     stopPolling();
                     setConnectionStatus('connected');
                     reconnectAttemptsRef.current = 0;
+                    // Ask the presenter for the current slide (covers a DB write still in flight)
+                    updateChannel.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: {} });
                 } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
+                    // supabase-js rejoins the channel automatically; calling subscribe()
+                    // again on the same channel throws, so we only track attempts here.
                     setConnectionStatus('disconnected');
                     reconnectAttemptsRef.current += 1;
-                    
-                    // After 3 failed attempts, switch to polling
+
+                    // After 3 failed attempts, poll as well until we are back
                     if (reconnectAttemptsRef.current >= 3) {
                         console.log('[Viewer] Too many reconnection attempts, switching to polling');
                         startPolling();
-                    } else {
-                        // Exponential backoff: 500ms, 1s, 2s
-                        const delay = Math.min(500 * Math.pow(2, reconnectAttemptsRef.current - 1), 2000);
-                        console.log(`[Viewer] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current})`);
-                        setTimeout(() => {
-                            setConnectionStatus('connecting');
-                            updateChannel.subscribe();
-                        }, delay);
                     }
                 }
             });
@@ -421,7 +371,7 @@ export function ViewerPage() {
                 
                 if (!error && data) {
                     console.log('[Viewer] Fetched current slide:', data.current_slide_index);
-                    setCurrentSlideIndex(data.current_slide_index);
+                    applyDbSlide(data.current_slide_index);
                     if (!data.is_live) {
                         setHasEnded(true);
                     }
@@ -433,7 +383,7 @@ export function ViewerPage() {
         return () => {
             document.removeEventListener('visibilitychange', handleVisibilityChange);
         };
-    }, [presentationId]);
+    }, [presentationId, applyDbSlide]);
 
     const toggleFullscreen = useCallback(async () => {
         try {
@@ -470,10 +420,8 @@ export function ViewerPage() {
 
     const currentSlide = slides.find(s => s.slide_number === currentSlideIndex);
     
-    // Get cached image URL if available, otherwise use original URL
-    const currentSlideImageUrl = currentSlide
-        ? (cachedImageUrls.get(currentSlide.slide_number) || currentSlide.image_url)
-        : null;
+    // Keep the previous slide on screen until the new image is decoded
+    const currentSlideImageUrl = useReadyImage(currentSlide?.image_url ?? null);
 
     // Loading
     if (isLoading) {
@@ -535,12 +483,6 @@ export function ViewerPage() {
                         width={optimalWidth}
                         loading="eager"
                         decoding="async"
-                        onError={(e) => {
-                            // Fallback to original URL if cached URL fails
-                            if (currentSlide && currentSlideImageUrl !== currentSlide.image_url) {
-                                (e.target as HTMLImageElement).src = currentSlide.image_url;
-                            }
-                        }}
                     />
                 )}
             </div>
