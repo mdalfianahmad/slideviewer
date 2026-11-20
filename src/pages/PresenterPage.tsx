@@ -1,5 +1,6 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { formatInviteCodeForDisplay, getJoinUrl } from '../lib/invite-code';
 import { getRecentPresentations } from '../lib/storage';
@@ -7,7 +8,17 @@ import { useAuth } from '../context/AuthContext';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import { QRCodeDisplay } from '../components/ui/QRCodeDisplay';
-import { cacheSlides } from '../lib/cache';
+import { preloadAround, useReadyImage } from '../lib/imagePreloader';
+import {
+    ENDED_EVENT,
+    SLIDE_EVENT,
+    SYNC_REQUEST_EVENT,
+    createLatestWinsWriter,
+    createSeqGate,
+    nextSeq,
+    slideSyncTopic,
+    type SlideMessage,
+} from '../lib/slideSync';
 import type { Presentation, Slide } from '../types/database';
 import styles from './PresenterPage.module.css';
 
@@ -93,56 +104,7 @@ export function PresenterPage() {
 
                 const loadedSlides = (slideData as Slide[]) || [];
                 setSlides(loadedSlides);
-
-                // Progressive caching: Load current + next 3 slides first
-                const currentIndex = presentationData.current_slide_index;
-                const currentSlideIndexInArray = loadedSlides.findIndex(s => s.slide_number === currentIndex);
-                
-                // Priority indices: current slide + next 3 slides
-                const priorityIndices: number[] = [];
-                for (let i = 0; i < 4 && (currentSlideIndexInArray + i) < loadedSlides.length; i++) {
-                    priorityIndices.push(currentSlideIndexInArray + i);
-                }
-
-                // Start caching with priority
-                if (presentationId) {
-                    cacheSlides(
-                        presentationId,
-                        loadedSlides.map(s => ({
-                            slideNumber: s.slide_number,
-                            imageUrl: s.image_url,
-                            thumbnailUrl: s.thumbnail_url,
-                        })),
-                        priorityIndices
-                    ).catch(() => {
-                        // Ignore caching errors
-                    });
-                }
-
-                // Preload priority slides immediately
-                priorityIndices.forEach(idx => {
-                    const slide = loadedSlides[idx];
-                    if (slide) {
-                        const img = new Image();
-                        img.src = slide.image_url;
-                        if (slide.thumbnail_url) {
-                            const thumb = new Image();
-                            thumb.src = slide.thumbnail_url;
-                        }
-                    }
-                });
-
-                // Preload remaining slides in background
-                loadedSlides.forEach((slide, idx) => {
-                    if (!priorityIndices.includes(idx)) {
-                        const img = new Image();
-                        img.src = slide.image_url;
-                        if (slide.thumbnail_url) {
-                            const thumb = new Image();
-                            thumb.src = slide.thumbnail_url;
-                        }
-                    }
-                });
+                // Images are preloaded in a window around the current slide (see effect below).
 
                 setIsLoading(false);
             } catch (err) {
@@ -155,54 +117,57 @@ export function PresenterPage() {
         fetchData();
     }, [presentationId, user]);
 
-    // Subscribe to realtime presentation updates
+    // Slide sync channel (Realtime Broadcast).
+    // The presenter does NOT listen to its own database updates: those echoes
+    // arrive late and used to pull the presenter back to an earlier slide.
+    const syncChannelRef = useRef<RealtimeChannel | null>(null);
+    const seqGateRef = useRef(createSeqGate());
+    const lastSentRef = useRef<SlideMessage | null>(null);
+
     useEffect(() => {
         if (!presentationId) return;
 
-        // PHASE 3: WebSocket optimization - configure channel with keep-alive
-        const updateChannel = supabase
-            .channel(`presenter:${presentationId}`, {
-                config: {
-                    broadcast: { self: true },
-                },
+        const channel = supabase
+            .channel(slideSyncTopic(presentationId), {
+                config: { broadcast: { self: false } },
             })
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'presentations',
-                    filter: `id=eq.${presentationId}`,
-                },
-                (payload) => {
-                    const updated = payload.new as Presentation;
-                    setPresentation(updated);
-                    // Sync current slide index from database (only if different to avoid loops)
-                    setCurrentSlideIndex(prevIndex => {
-                        if (updated.current_slide_index !== prevIndex) {
-                            return updated.current_slide_index;
-                        }
-                        return prevIndex;
-                    });
+            // Another presenter device (e.g. phone as remote) changed the slide
+            .on('broadcast', { event: SLIDE_EVENT }, ({ payload }) => {
+                const msg = payload as SlideMessage;
+                if (seqGateRef.current.accept(msg.seq)) {
+                    setCurrentSlideIndex(msg.slide);
                 }
-            )
-            .subscribe((status) => {
-                // PHASE 3: WebSocket optimization - faster reconnection
-                if (status === 'SUBSCRIBED') {
-                    console.log('Presenter channel subscribed');
-                } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED') {
-                    console.warn('Presenter channel error, reconnecting...');
-                    // Faster reconnection: 500ms instead of 2000ms
-                    setTimeout(() => {
-                        updateChannel.subscribe();
-                    }, 500);
+            })
+            // A viewer just connected and wants the current slide
+            .on('broadcast', { event: SYNC_REQUEST_EVENT }, () => {
+                const last = lastSentRef.current;
+                if (last) {
+                    channel.send({ type: 'broadcast', event: SLIDE_EVENT, payload: last });
                 }
-            });
+            })
+            .subscribe();
 
+        syncChannelRef.current = channel;
         return () => {
-            supabase.removeChannel(updateChannel);
+            syncChannelRef.current = null;
+            supabase.removeChannel(channel);
         };
     }, [presentationId]);
+
+    // Persist the slide index for late joiners / polling. One request in flight,
+    // newest value wins, so writes can never land out of order.
+    const persistSlide = useMemo(
+        () =>
+            createLatestWinsWriter<number>(async (slideNumber) => {
+                if (!presentationId) return;
+                const { error } = await supabase
+                    .from('presentations')
+                    .update({ current_slide_index: slideNumber })
+                    .eq('id', presentationId);
+                if (error) throw error;
+            }),
+        [presentationId]
+    );
 
     // Track audience with Supabase Presence
     useEffect(() => {
@@ -291,76 +256,57 @@ export function PresenterPage() {
         }
     }, []);
 
-    const goToSlide = useCallback(async (slideNumber: number) => {
-        if (!presentationId || !hasPresenterToken || slides.length === 0) return;
-        
-        // Find the slide with this slide_number
-        const targetSlide = slides.find(s => s.slide_number === slideNumber);
-        if (!targetSlide) {
-            // If slide doesn't exist, find the closest one
-            const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
-            const closestSlide = sortedSlides.find(s => s.slide_number >= slideNumber) || sortedSlides[sortedSlides.length - 1];
-            if (closestSlide) {
-                slideNumber = closestSlide.slide_number;
-            } else {
-                return; // No slides available
-            }
+    // Slides in display order, computed once per slides change
+    const sortedSlides = useMemo(
+        () => [...slides].sort((a, b) => a.slide_number - b.slide_number),
+        [slides]
+    );
+    const currentPosition = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+
+    // Preload the current slide, the next 3 and the previous 1 (plus next thumbnail)
+    useEffect(() => {
+        preloadAround(sortedSlides, currentPosition, s => [s.image_url], { ahead: 3, behind: 1 });
+        const next = sortedSlides[currentPosition + 1];
+        if (next?.thumbnail_url) preloadAround([next], 0, s => [s.thumbnail_url], { ahead: 0, behind: 0 });
+    }, [sortedSlides, currentPosition]);
+
+    const goToSlide = useCallback((slideNumber: number) => {
+        if (!presentationId || !hasPresenterToken || sortedSlides.length === 0) return;
+
+        // If slide doesn't exist, use the closest one
+        if (!sortedSlides.some(s => s.slide_number === slideNumber)) {
+            const closest = sortedSlides.find(s => s.slide_number >= slideNumber) || sortedSlides[sortedSlides.length - 1];
+            slideNumber = closest.slide_number;
         }
-        
+
         setCurrentSlideIndex(slideNumber);
         setShowSlideOverview(false); // Close overview when selecting a slide
 
-        console.log('🎯 Presenter updating database - slide:', slideNumber, 'presentationId:', presentationId);
-        const { error } = await supabase
-            .from('presentations')
-            .update({ current_slide_index: slideNumber })
-            .eq('id', presentationId);
-        
-        if (error) {
-            console.error('❌ Failed to update database:', error);
-        } else {
-            console.log('✅ Database updated successfully');
-        }
-    }, [presentationId, hasPresenterToken, slides]);
+        // 1. Instant: broadcast to viewers
+        const msg: SlideMessage = { slide: slideNumber, seq: nextSeq() };
+        seqGateRef.current.accept(msg.seq);
+        lastSentRef.current = msg;
+        syncChannelRef.current?.send({ type: 'broadcast', event: SLIDE_EVENT, payload: msg });
+
+        // 2. Background: persist for late joiners and the polling fallback
+        persistSlide(slideNumber);
+    }, [presentationId, hasPresenterToken, sortedSlides, persistSlide]);
 
     const nextSlide = useCallback(() => {
-        console.log('▶️ Next slide button clicked');
-        if (slides.length === 0) {
-            console.warn('⚠️ No slides available');
-            return;
+        if (currentPosition >= 0 && currentPosition < sortedSlides.length - 1) {
+            goToSlide(sortedSlides[currentPosition + 1].slide_number);
         }
-        
-        // Find current slide's position in the sorted array
-        const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
-        const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
-        console.log('📍 Current slide index in array:', currentIndex, 'currentSlideIndex:', currentSlideIndex);
-        
-        // Get next slide
-        if (currentIndex >= 0 && currentIndex < sortedSlides.length - 1) {
-            const nextSlideNumber = sortedSlides[currentIndex + 1].slide_number;
-            console.log('➡️ Going to slide:', nextSlideNumber);
-            goToSlide(nextSlideNumber);
-        } else {
-            console.warn('⚠️ Already at last slide');
-        }
-    }, [currentSlideIndex, slides, goToSlide]);
+    }, [currentPosition, sortedSlides, goToSlide]);
 
     const prevSlide = useCallback(() => {
-        if (slides.length === 0) return;
-        
-        // Find current slide's position in the sorted array
-        const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
-        const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
-        
-        // Get previous slide
-        if (currentIndex > 0) {
-            const prevSlideNumber = sortedSlides[currentIndex - 1].slide_number;
-            goToSlide(prevSlideNumber);
+        if (currentPosition > 0) {
+            goToSlide(sortedSlides[currentPosition - 1].slide_number);
         }
-    }, [currentSlideIndex, slides, goToSlide]);
+    }, [currentPosition, sortedSlides, goToSlide]);
 
     const endPresentation = useCallback(async () => {
         if (!presentationId) return;
+        syncChannelRef.current?.send({ type: 'broadcast', event: ENDED_EVENT, payload: {} });
         await supabase
             .from('presentations')
             .update({ is_live: false })
@@ -446,15 +392,12 @@ export function PresenterPage() {
         currentSlide = slides[0];
     }
     
-    // Find next slide by finding current position and getting the next one
-    let nextSlidePreview: Slide | undefined;
-    if (slides.length > 0 && currentSlide) {
-        const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
-        const currentIndex = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
-        if (currentIndex >= 0 && currentIndex < sortedSlides.length - 1) {
-            nextSlidePreview = sortedSlides[currentIndex + 1];
-        }
-    }
+    // Next slide preview
+    const nextSlidePreview: Slide | undefined =
+        currentPosition >= 0 ? sortedSlides[currentPosition + 1] : undefined;
+
+    // Keep the previous slide on screen until the new image is decoded
+    const currentSlideImageUrl = useReadyImage(currentSlide?.image_url ?? null);
 
     if (isLoading) {
         return (
@@ -507,9 +450,7 @@ export function PresenterPage() {
         );
     }
 
-    // Calculate position in sorted slides for navigation buttons
-    const sortedSlides = [...slides].sort((a, b) => a.slide_number - b.slide_number);
-    const currentPosition = sortedSlides.findIndex(s => s.slide_number === currentSlideIndex);
+    // Position in sorted slides for navigation buttons
     const isFirstSlide = currentPosition === 0;
     const isLastSlide = currentPosition === sortedSlides.length - 1;
     const slidePosition = currentPosition >= 0 ? currentPosition + 1 : 0;
@@ -558,7 +499,7 @@ export function PresenterPage() {
                 {/* Current slide */}
                 <div className={styles.currentSlideContainer}>
                     <img
-                        src={currentSlide.image_url}
+                        src={currentSlideImageUrl ?? currentSlide.image_url}
                         alt={`Slide ${currentSlideIndex}`}
                         className={styles.currentSlide}
                     />
