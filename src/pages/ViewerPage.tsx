@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import type { RealtimeChannel } from '@supabase/supabase-js';
+import { supabase, onRealtimeHeartbeat } from '../lib/supabase';
+import { ensureRealtimeConnected } from '../lib/realtimeHealth';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
 import {
@@ -61,11 +63,36 @@ export function ViewerPage() {
     }, [presentationId]);
 
     // Apply a slide index read from the database (initial load, polling,
-    // postgres_changes, tab refocus) unless a fresher broadcast arrived recently.
+    // reconnect, tab refocus) unless a fresher broadcast arrived recently.
     const applyDbSlide = useCallback((slideIndex: number) => {
         if (Date.now() - lastBroadcastAtRef.current < BROADCAST_PRIORITY_MS) return;
         setCurrentSlideIndex(slideIndex);
     }, []);
+
+    // One-off read of the live state from the database
+    const fetchLiveState = useCallback(async () => {
+        const pid = presentationIdRef.current;
+        if (!pid) return;
+        try {
+            const { data, error } = await supabase
+                .from('presentations')
+                .select('current_slide_index, is_live')
+                .eq('id', pid)
+                .single();
+            if (!error && data) {
+                applyDbSlide(data.current_slide_index);
+                if (!data.is_live) setHasEnded(true);
+            }
+        } catch (e) {
+            console.error('[Viewer] Live state fetch error:', e);
+        }
+    }, [applyDbSlide]);
+
+    // Bumping this recreates the realtime channels (used after a socket reconnect,
+    // so channels join immediately instead of waiting on rejoin timers)
+    const [channelEpoch, setChannelEpoch] = useState(0);
+    const updateChannelRef = useRef<RealtimeChannel | null>(null);
+    const viewerIdRef = useRef(`viewer_${Math.random().toString(36).substring(2, 9)}`);
 
     // Show reconnect hint after 2 seconds of "connecting"
     useEffect(() => {
@@ -202,32 +229,16 @@ export function ViewerPage() {
         console.log('[Viewer] Starting polling fallback (WebSocket unavailable)');
         // Force update status synchronously
         setConnectionStatus('polling');
-        
-        const poll = async () => {
-            const pid = presentationIdRef.current;
-            if (!pid) return;
-            try {
-                const { data, error } = await supabase
-                    .from('presentations')
-                    .select('current_slide_index, is_live')
-                    .eq('id', pid)
-                    .single();
-                
-                if (!error && data) {
-                    applyDbSlide(data.current_slide_index);
-                    if (!data.is_live) {
-                        setHasEnded(true);
-                    }
-                }
-            } catch (e) {
-                console.error('[Viewer] Poll error:', e);
-            }
+
+        // Every 1s, but only while the page is visible: a hidden tab or locked
+        // phone sends nothing. Waking up triggers an immediate fetch (see wake handler).
+        const poll = () => {
+            if (document.visibilityState !== 'visible') return;
+            void fetchLiveState();
         };
-        
-        // Poll every 1 second for better responsiveness
         pollingIntervalRef.current = window.setInterval(poll, 1000);
         poll(); // Initial poll
-    }, [applyDbSlide]); // Stable - uses refs
+    }, [fetchLiveState]); // Stable - uses refs
 
     const stopPolling = useCallback(() => {
         if (pollingIntervalRef.current) {
@@ -255,10 +266,9 @@ export function ViewerPage() {
                 console.log('[Viewer] Unregistered service workers');
             }
             
-            // Clear localStorage for this site
-            localStorage.clear();
-            sessionStorage.clear();
-            
+            // localStorage is deliberately kept: it holds the Supabase login
+            // and the presenter's recent presentations.
+
             // Hard reload
             window.location.reload();
         } catch (e) {
@@ -291,8 +301,7 @@ export function ViewerPage() {
     useEffect(() => {
         if (!presentationId) return;
 
-        // Generate a unique viewer ID for this session
-        const viewerId = `viewer_${Math.random().toString(36).substring(2, 9)}`;
+        const viewerId = viewerIdRef.current;
 
         // Set a timeout - if not connected within 5 seconds, fall back to polling
         connectionTimeoutRef.current = window.setTimeout(() => {
@@ -300,8 +309,8 @@ export function ViewerPage() {
             startPolling();
         }, 5000);
 
-        // Slide sync channel: broadcast is the fast path; postgres_changes is kept
-        // as a backup (and for is_live) in case a broadcast is missed.
+        // Slide sync channel: Broadcast only. Anything missed while disconnected
+        // is caught up from the database on (re)subscribe and on wake.
         const updateChannel = supabase
             .channel(slideSyncTopic(presentationId), {
                 config: {
@@ -318,23 +327,6 @@ export function ViewerPage() {
             .on('broadcast', { event: ENDED_EVENT }, () => {
                 setHasEnded(true);
             })
-            .on(
-                'postgres_changes',
-                {
-                    event: 'UPDATE',
-                    schema: 'public',
-                    table: 'presentations',
-                    filter: `id=eq.${presentationId}`,
-                },
-                (payload) => {
-                    const updated = payload.new as Presentation;
-                    setPresentation(updated);
-                    applyDbSlide(updated.current_slide_index);
-                    if (!updated.is_live) {
-                        setHasEnded(true);
-                    }
-                }
-            )
             .subscribe((status) => {
                 console.log('[Viewer] Realtime status:', status);
                 if (status === 'SUBSCRIBED') {
@@ -346,8 +338,9 @@ export function ViewerPage() {
                     stopPolling();
                     setConnectionStatus('connected');
                     reconnectAttemptsRef.current = 0;
-                    // Ask the presenter for the current slide (covers a DB write still in flight)
+                    // Catch up on anything missed: ask the presenter directly, and read the DB
                     updateChannel.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: {} });
+                    void fetchLiveState();
                 } else if (status === 'CHANNEL_ERROR' || status === 'CLOSED' || status === 'TIMED_OUT') {
                     // supabase-js rejoins the channel automatically; calling subscribe()
                     // again on the same channel throws, so we only track attempts here.
@@ -376,16 +369,19 @@ export function ViewerPage() {
             }
         });
 
+        updateChannelRef.current = updateChannel;
+
         return () => {
             if (connectionTimeoutRef.current) {
                 clearTimeout(connectionTimeoutRef.current);
             }
             stopPolling();
+            updateChannelRef.current = null;
             supabase.removeChannel(updateChannel);
             supabase.removeChannel(presenceChannel);
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [presentationId]); // Only re-run when presentationId changes
+    }, [presentationId, channelEpoch]); // Re-run on presentation change or forced reconnect
 
     // Fullscreen change listener
     useEffect(() => {
@@ -406,34 +402,53 @@ export function ViewerPage() {
         };
     }, []);
 
-    // Handle tab visibility changes - refetch current slide when tab becomes visible
-    // This fixes issues on mobile where WebSocket connections are suspended
+    // Wake handling: phones suspend the WebSocket when the screen locks or the
+    // browser is backgrounded, and it can come back open but dead. On wake we
+    // (1) read the current slide from the DB at once, and (2) check the socket
+    // with an immediate heartbeat, reconnecting and rejoining if it is dead.
+    const resyncOnWake = useCallback(async (reason: string) => {
+        if (!presentationIdRef.current) return;
+        console.log(`[Viewer] Wake (${reason}): resyncing`);
+        void fetchLiveState();
+
+        const result = await ensureRealtimeConnected();
+        if (result === 'reconnected') {
+            console.log('[Viewer] Socket was dead, reconnected');
+            setConnectionStatus('connecting');
+            setChannelEpoch((e) => e + 1);
+        } else {
+            // Socket alive: still ask the presenter in case a broadcast was missed
+            updateChannelRef.current?.send({ type: 'broadcast', event: SYNC_REQUEST_EVENT, payload: {} });
+        }
+    }, [fetchLiveState]);
+
     useEffect(() => {
-        const handleVisibilityChange = async () => {
-            if (document.visibilityState === 'visible' && presentationId) {
-                console.log('[Viewer] Tab became visible, checking for updates...');
-                // Refetch current presentation state
-                const { data, error } = await supabase
-                    .from('presentations')
-                    .select('current_slide_index, is_live')
-                    .eq('id', presentationId)
-                    .single();
-                
-                if (!error && data) {
-                    console.log('[Viewer] Fetched current slide:', data.current_slide_index);
-                    applyDbSlide(data.current_slide_index);
-                    if (!data.is_live) {
-                        setHasEnded(true);
-                    }
-                }
-            }
+        const onVisibility = () => {
+            if (document.visibilityState === 'visible') void resyncOnWake('visible');
+        };
+        const onOnline = () => void resyncOnWake('online');
+        const onPageShow = (e: PageTransitionEvent) => {
+            if (e.persisted) void resyncOnWake('pageshow'); // restored from back/forward cache
         };
 
-        document.addEventListener('visibilitychange', handleVisibilityChange);
+        document.addEventListener('visibilitychange', onVisibility);
+        window.addEventListener('online', onOnline);
+        window.addEventListener('pageshow', onPageShow);
         return () => {
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            document.removeEventListener('visibilitychange', onVisibility);
+            window.removeEventListener('online', onOnline);
+            window.removeEventListener('pageshow', onPageShow);
         };
-    }, [presentationId, applyDbSlide]);
+    }, [resyncOnWake]);
+
+    // Status dot: reflect a dead socket as soon as a heartbeat fails
+    useEffect(() => {
+        return onRealtimeHeartbeat((status) => {
+            if (status === 'timeout' || status === 'disconnected') {
+                setConnectionStatus((s) => (s === 'polling' ? s : 'disconnected'));
+            }
+        });
+    }, []);
 
     const toggleFullscreen = useCallback(async () => {
         try {
