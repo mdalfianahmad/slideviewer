@@ -151,6 +151,14 @@ export function ViewerPage() {
     // Download every slide in the background, nearest-ahead first.
     // Starts once the current slide is on screen so it never competes with it.
     const backgroundLoaderRef = useRef<ReturnType<typeof createBackgroundLoader> | null>(null);
+    const [preload, setPreload] = useState({ done: 0, total: 0 });
+    const [hidePreloadStatus, setHidePreloadStatus] = useState(false);
+    const preloadComplete = preload.total > 0 && preload.done >= preload.total;
+    useEffect(() => {
+        if (!preloadComplete) return;
+        const t = window.setTimeout(() => setHidePreloadStatus(true), 4000);
+        return () => clearTimeout(t);
+    }, [preloadComplete]);
     const currentPositionRef = useRef(currentPosition);
     useEffect(() => {
         currentPositionRef.current = currentPosition;
@@ -159,7 +167,10 @@ export function ViewerPage() {
 
     useEffect(() => {
         if (slides.length === 0) return;
-        const loader = createBackgroundLoader({ concurrency: 3 });
+        const loader = createBackgroundLoader({
+            concurrency: 3,
+            onProgress: (done, total) => setPreload({ done, total }),
+        });
         backgroundLoaderRef.current = loader;
 
         const start = () => {
@@ -529,6 +540,13 @@ export function ViewerPage() {
             <div className={styles.overlay}>
                 <div className={styles.slideCounter}>
                     {currentSlideIndex} / {slides.length}
+                    {preload.total > 0 && !hidePreloadStatus && (
+                        <span className={styles.preloadStatus}>
+                            {preloadComplete
+                                ? ' · all slides ready'
+                                : ` · loading ${preload.done}/${preload.total}`}
+                        </span>
+                    )}
                 </div>
                 
                 {/* Connection status indicator */}

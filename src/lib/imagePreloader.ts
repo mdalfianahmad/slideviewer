@@ -97,12 +97,21 @@ export function preloadAround<T>(
  * Images are only downloaded, not kept decoded, so memory stays flat even for
  * decks with hundreds of slides. The windowed `preloadAround` handles decoding.
  */
-export function createBackgroundLoader({ concurrency = 3 }: { concurrency?: number } = {}) {
+export function createBackgroundLoader({
+    concurrency = 3,
+    onProgress,
+}: {
+    concurrency?: number;
+    /** Called with (settled, total) whenever a download finishes or the list changes. */
+    onProgress?: (done: number, total: number) => void;
+} = {}) {
     let urls: string[] = [];
     let cursor = 0;
     const settled = new Set<string>(); // loaded or failed: never requested again
     const inFlight = new Set<string>();
     let stopped = false;
+
+    const settledCount = () => urls.reduce((n, u) => n + (settled.has(u) ? 1 : 0), 0);
 
     function pickNext(): string | undefined {
         const isPending = (u: string) => !settled.has(u) && !inFlight.has(u);
@@ -128,6 +137,7 @@ export function createBackgroundLoader({ concurrency = 3 }: { concurrency?: numb
                 inFlight.delete(url);
                 settled.add(url);
                 img.onload = img.onerror = null;
+                if (!stopped) onProgress?.(settledCount(), urls.length);
                 pump();
             };
             img.onload = finish;
@@ -140,6 +150,7 @@ export function createBackgroundLoader({ concurrency = 3 }: { concurrency?: numb
         /** Set the full list of URLs in display order and start downloading. */
         setUrls(list: Array<string | null | undefined>) {
             urls = list.filter((u): u is string => !!u);
+            onProgress?.(settledCount(), urls.length);
             pump();
         },
         /** Move the priority point (index into the list given to setUrls). */

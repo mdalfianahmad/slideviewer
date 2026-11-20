@@ -55,6 +55,17 @@ describe('createBackgroundLoader', () => {
         expect(order()).toEqual(['s0', 's1', 's7']);
     });
 
+    it('reports progress', () => {
+        const progress: Array<[number, number]> = [];
+        const loader = createBackgroundLoader({
+            concurrency: 2,
+            onProgress: (d, t) => progress.push([d, t]),
+        });
+        loader.setUrls(urls(3));
+        for (let i = 0; i < 3; i++) finishOldest();
+        expect(progress).toEqual([[0, 3], [1, 3], [2, 3], [3, 3]]);
+    });
+
     it('stops requesting after stop()', () => {
         const loader = createBackgroundLoader({ concurrency: 1 });
         loader.setUrls(urls(3));
