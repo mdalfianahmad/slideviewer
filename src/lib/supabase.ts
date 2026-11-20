@@ -11,6 +11,20 @@ if (!supabaseUrl || !supabaseAnonKey) {
     );
 }
 
+// Realtime heartbeat listeners (see realtimeHealth.ts)
+type HeartbeatStatus = 'sent' | 'ok' | 'error' | 'timeout' | 'disconnected';
+const heartbeatListeners = new Set<(status: HeartbeatStatus) => void>();
+export function onRealtimeHeartbeat(listener: (status: HeartbeatStatus) => void): () => void {
+    heartbeatListeners.add(listener);
+    return () => heartbeatListeners.delete(listener);
+}
+
+// Reconnect fast. The library default backs off 1s, 2s, 5s, then 10s, and the
+// same schedule is used for channels rejoining, so a phone waking up could
+// wait up to 10s before live updates resumed.
+const FAST_RECONNECT_MS = [200, 500, 1000, 2000];
+const reconnectAfterMs = (tries: number) => FAST_RECONNECT_MS[tries - 1] ?? 3000;
+
 // Create Supabase client
 // This client is used for all database operations, storage, and realtime subscriptions
 export const supabase = createClient(
@@ -24,6 +38,12 @@ export const supabase = createClient(
         realtime: {
             params: {
                 eventsPerSecond: 10,
+            },
+            // Detect a dead connection in ~15s instead of the default 25s
+            heartbeatIntervalMs: 15000,
+            reconnectAfterMs,
+            heartbeatCallback: (status: HeartbeatStatus) => {
+                heartbeatListeners.forEach((l) => l(status));
             },
         },
     }
