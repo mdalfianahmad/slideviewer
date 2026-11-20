@@ -3,7 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { Spinner } from '../components/ui/Spinner';
 import { Button } from '../components/ui/Button';
-import { preloadAround, useReadyImage } from '../lib/imagePreloader';
+import {
+    createBackgroundLoader,
+    preloadAround,
+    preloadImage,
+    useReadyImage,
+} from '../lib/imagePreloader';
 import {
     ENDED_EVENT,
     SLIDE_EVENT,
@@ -27,9 +32,10 @@ export function ViewerPage() {
     const viewportSize = useViewportSize();
     const connectionQuality = useConnectionQuality();
     
-    // PHASE 3: Lazy loading range based on connection quality
-    // Fast connections: preload ±5 slides, Slow connections: preload ±2 slides
-    const lazyLoadRange = connectionQuality === 'fast' ? 5 : connectionQuality === 'slow' ? 2 : 3;
+    // How many slides ahead are kept decoded and ready to swap in instantly.
+    // (All slides are downloaded in the background regardless; see below.)
+    // iOS does not report connection quality ('unknown'), so treat that as fast.
+    const lazyLoadRange = connectionQuality === 'slow' ? 3 : 5;
 
     const [presentation, setPresentation] = useState<Presentation | null>(null);
     const [slides, setSlides] = useState<Slide[]>([]);
@@ -141,6 +147,39 @@ export function ViewerPage() {
             behind: 1,
         });
     }, [slides, currentPosition, lazyLoadRange]);
+
+    // Download every slide in the background, nearest-ahead first.
+    // Starts once the current slide is on screen so it never competes with it.
+    const backgroundLoaderRef = useRef<ReturnType<typeof createBackgroundLoader> | null>(null);
+    const currentPositionRef = useRef(currentPosition);
+    useEffect(() => {
+        currentPositionRef.current = currentPosition;
+        backgroundLoaderRef.current?.setCursor(Math.max(0, currentPosition));
+    }, [currentPosition]);
+
+    useEffect(() => {
+        if (slides.length === 0) return;
+        const loader = createBackgroundLoader({ concurrency: 3 });
+        backgroundLoaderRef.current = loader;
+
+        const start = () => {
+            loader.setCursor(Math.max(0, currentPositionRef.current));
+            loader.setUrls(slides.map(s => s.image_url));
+        };
+        const first = slides[Math.max(0, currentPositionRef.current)];
+        // Start after the current slide loads, or after 1.5s at the latest
+        const fallback = window.setTimeout(start, 1500);
+        preloadImage(first.image_url).then(() => {
+            clearTimeout(fallback);
+            start();
+        });
+
+        return () => {
+            clearTimeout(fallback);
+            loader.stop();
+            backgroundLoaderRef.current = null;
+        };
+    }, [slides]);
 
     // Polling fallback function - used when WebSocket fails
     const startPolling = useCallback(() => {
