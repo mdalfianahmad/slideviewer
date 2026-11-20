@@ -113,6 +113,10 @@
     border-radius: var(--radius-sm);
 }
 
+.preloadStatus {
+    opacity: 0.8;
+}
+
 .fullscreenButton {
     position: absolute;
     bottom: var(--spacing-4);

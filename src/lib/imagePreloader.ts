@@ -35,6 +35,7 @@ export function preloadImage(url: string): Promise<void> {
 
     const img = new Image();
     img.decoding = 'async';
+    img.fetchPriority = 'high';
     img.src = url;
 
     const loaded: Promise<void> = typeof img.decode === 'function'
@@ -85,6 +86,82 @@ export function preloadAround<T>(
             if (url) void preloadImage(url);
         }
     }
+}
+
+/**
+ * Downloads every URL in the list into the browser cache, a few at a time, at
+ * low priority. Order follows the cursor: forward from the current slide to
+ * the end, then backward. Moving the cursor re-prioritises what is still
+ * pending, so the slides just ahead of the presenter are always next.
+ *
+ * Images are only downloaded, not kept decoded, so memory stays flat even for
+ * decks with hundreds of slides. The windowed `preloadAround` handles decoding.
+ */
+export function createBackgroundLoader({
+    concurrency = 3,
+    onProgress,
+}: {
+    concurrency?: number;
+    /** Called with (settled, total) whenever a download finishes or the list changes. */
+    onProgress?: (done: number, total: number) => void;
+} = {}) {
+    let urls: string[] = [];
+    let cursor = 0;
+    const settled = new Set<string>(); // loaded or failed: never requested again
+    const inFlight = new Set<string>();
+    let stopped = false;
+
+    const settledCount = () => urls.reduce((n, u) => n + (settled.has(u) ? 1 : 0), 0);
+
+    function pickNext(): string | undefined {
+        const isPending = (u: string) => !settled.has(u) && !inFlight.has(u);
+        for (let i = Math.max(0, cursor); i < urls.length; i++) {
+            if (isPending(urls[i])) return urls[i];
+        }
+        for (let i = Math.min(cursor, urls.length) - 1; i >= 0; i--) {
+            if (isPending(urls[i])) return urls[i];
+        }
+        return undefined;
+    }
+
+    function pump() {
+        while (!stopped && inFlight.size < concurrency) {
+            const url = pickNext();
+            if (!url) return;
+            inFlight.add(url);
+
+            const img = new Image();
+            img.decoding = 'async';
+            img.fetchPriority = 'low';
+            const finish = () => {
+                inFlight.delete(url);
+                settled.add(url);
+                img.onload = img.onerror = null;
+                if (!stopped) onProgress?.(settledCount(), urls.length);
+                pump();
+            };
+            img.onload = finish;
+            img.onerror = finish;
+            img.src = url;
+        }
+    }
+
+    return {
+        /** Set the full list of URLs in display order and start downloading. */
+        setUrls(list: Array<string | null | undefined>) {
+            urls = list.filter((u): u is string => !!u);
+            onProgress?.(settledCount(), urls.length);
+            pump();
+        },
+        /** Move the priority point (index into the list given to setUrls). */
+        setCursor(index: number) {
+            cursor = index;
+            pump();
+        },
+        stop() {
+            stopped = true;
+        },
+    };
 }
 
 /**
